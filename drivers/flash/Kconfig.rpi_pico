@@ -12,3 +12,13 @@ config FLASH_RPI_PICO
 	select PICOSDK_USE_FLASH
 	help
 	  Enable Raspberry Pi Pico flash driver.
+
+if FLASH_RPI_PICO
+
+config FLASH_RPI_PICO_READ_UNTRANSLATED
+	bool "Use untranslated window for flash reads"
+	depends on SOC_SERIES_RP2350
+	help
+	  Bypass XIP cache and address translation hardware when reading from flash.
+
+endif # FLASH_RPI_PICO
