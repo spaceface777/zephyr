@@ -325,6 +325,7 @@
 			clocks = <&clocks RPI_PICO_CLKID_CLK_SYS>;
 			interrupts = <23 RPI_PICO_DEFAULT_IRQ_PRIORITY>;
 			interrupt-names = "i2c0";
+			fs-spike-len = <0x7>;
 			status = "disabled";
 		};
 
@@ -337,6 +338,7 @@
 			clocks = <&clocks RPI_PICO_CLKID_CLK_SYS>;
 			interrupts = <24 RPI_PICO_DEFAULT_IRQ_PRIORITY>;
 			interrupt-names = "i2c1";
+			fs-spike-len = <0x7>;
 			status = "disabled";
 		};
 
