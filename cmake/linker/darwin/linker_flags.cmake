@@ -1,0 +1,17 @@
+# SPDX-License-Identifier: Apache-2.0
+
+set_property(TARGET linker PROPERTY base)
+set_property(TARGET linker PROPERTY baremetal -nostdlib)
+set_property(TARGET linker PROPERTY orphan_warning)
+set_property(TARGET linker PROPERTY orphan_error)
+set_property(TARGET linker PROPERTY undefined ${LINKERFLAGPREFIX},-u,)
+set_property(TARGET linker PROPERTY memusage)
+set_property(TARGET linker PROPERTY sanitizer_undefined -fsanitize=undefined)
+set_property(TARGET linker PROPERTY sanitizer_undefined_trap -fsanitize-undefined-trap-on-error)
+set_property(TARGET linker PROPERTY sanitizer_undefined_library)
+set_property(TARGET linker PROPERTY no_position_independent)
+set_property(TARGET linker PROPERTY partial_linking ${LINKERFLAGPREFIX},-r)
+set_property(TARGET linker PROPERTY lto_arguments)
+set_property(TARGET linker PROPERTY lto_arguments_st)
+set_property(TARGET linker PROPERTY no_relax)
+set_property(TARGET linker PROPERTY sort_alignment)

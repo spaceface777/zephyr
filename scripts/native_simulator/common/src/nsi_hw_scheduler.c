@@ -24,8 +24,15 @@
 uint64_t nsi_simu_time; /* The actual time as known by the HW models */
 static uint64_t end_of_time = NSI_NEVER; /* When will this device stop */
 
+#ifdef __APPLE__
+extern struct nsi_hw_event_st __nsi_hw_events_start[]
+	__asm("section$start$__ZNSIEVT$__events");
+extern struct nsi_hw_event_st __nsi_hw_events_end[]
+	__asm("section$end$__ZNSIEVT$__events");
+#else
 extern struct nsi_hw_event_st __nsi_hw_events_start[];
 extern struct nsi_hw_event_st __nsi_hw_events_end[];
+#endif
 
 static unsigned int number_of_events;
 

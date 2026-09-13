@@ -54,7 +54,7 @@ static int cbprintf_via_va_list(cbprintf_cb out,
 {
 	return 0;
 }
-#elif defined(__aarch64__)
+#elif defined(__aarch64__) && !defined(__APPLE__)
 /*
  * Reference:
  *

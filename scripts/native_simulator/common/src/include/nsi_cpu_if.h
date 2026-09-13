@@ -18,11 +18,20 @@ extern "C" {
  * embedded SW library, both by the native simulator runner,
  * and other possible embedded CPU's SW.
  */
+#ifdef __APPLE__
+#define NATIVE_SIMULATOR_IF_SECT(sect) __attribute__((visibility("default"))) \
+	__attribute__((__section__(sect)))
+#define NATIVE_SIMULATOR_IF NATIVE_SIMULATOR_IF_SECT( \
+	"__TEXT,__nsif,regular,pure_instructions")
+#define NATIVE_SIMULATOR_IF_DATA NATIVE_SIMULATOR_IF_SECT("__DATA,__nsif")
+#define NATIVE_SIMULATOR_IF_TEXT NATIVE_SIMULATOR_IF
+#else
 #define NATIVE_SIMULATOR_IF_SECT(sect) __attribute__((visibility("default"))) \
 	__attribute__((__section__(sect)))
 #define NATIVE_SIMULATOR_IF NATIVE_SIMULATOR_IF_SECT(".native_sim_if")
 #define NATIVE_SIMULATOR_IF_DATA NATIVE_SIMULATOR_IF_SECT(".native_sim_if.data")
 #define NATIVE_SIMULATOR_IF_TEXT NATIVE_SIMULATOR_IF_SECT(".native_sim_if.text")
+#endif
 
 /*
  * Implementation note:

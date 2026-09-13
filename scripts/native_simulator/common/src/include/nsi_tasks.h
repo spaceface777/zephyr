@@ -49,6 +49,21 @@ extern "C" {
  *
  * The function must take no parameters and return nothing.
  */
+#ifdef __APPLE__
+struct nsi_macho_task {
+	void (*function)(void);
+	unsigned int priority;
+};
+#define NSI_TASK(fn, level, prio) \
+	static const struct nsi_macho_task NSI_CONCAT(__nsi_task_, fn) \
+	__attribute__((__used__)) NSI_NOASAN \
+	__attribute__((__section__("__ZNSITASK,__s" \
+		NSI_STRINGIFY(NSITASK_##level##_LEVEL) "_" NSI_STRINGIFY(prio)))) = { \
+		.function = fn, .priority = prio, \
+	}; \
+	_Static_assert(NSITASK_##level##_LEVEL >= 0, \
+			"Using a non pre-defined level, it will be dropped")
+#else
 #define NSI_TASK(fn, level, prio)	\
 	static void (* const NSI_CONCAT(__nsi_task_, fn))(void) \
 	__attribute__((__used__)) NSI_NOASAN \
@@ -57,6 +72,7 @@ extern "C" {
 	/* Let's cross-check the macro level is a valid one, so we don't silently drop it */ \
 	_Static_assert(NSITASK_##level##_LEVEL >= 0, \
 			"Using a non pre-defined level, it will be dropped")
+#endif
 
 /**
  * @brief Run the set of special native tasks corresponding to the given level

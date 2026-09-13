@@ -599,6 +599,7 @@ zephyr_compile_options(${COMPILER_OPT_AS_LIST})
 # TODO: Include arch compiler options at this point.
 
 if(NOT CMAKE_C_COMPILER_ID STREQUAL "Clang" AND
+   NOT CMAKE_C_COMPILER_ID STREQUAL "AppleClang" AND
    NOT CMAKE_C_COMPILER_ID STREQUAL "IntelLLVM" AND
    NOT CMAKE_C_COMPILER_ID STREQUAL "ARMClang")
   # GCC assumed
@@ -2141,7 +2142,7 @@ if(CONFIG_LLEXT)
   endif()
 endif()
 
-if(NOT CMAKE_C_COMPILER_ID STREQUAL "ARMClang")
+if(NOT CMAKE_C_COMPILER_ID STREQUAL "ARMClang" AND NOT LINKER STREQUAL "darwin")
   set(check_init_priorities_input
       $<IF:$<TARGET_EXISTS:native_runner_executable>,${BYPRODUCT_KERNEL_EXE_NAME},${BYPRODUCT_KERNEL_ELF_NAME}>
   )

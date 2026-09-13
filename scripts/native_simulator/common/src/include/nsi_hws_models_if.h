@@ -33,6 +33,15 @@ struct nsi_hw_event_st {
  *
  * Priority can be a number between 0 and 999.
  */
+#ifdef __APPLE__
+#define NSI_HW_EVENT(t, fn, prio) \
+	static const struct nsi_hw_event_st NSI_CONCAT(NSI_CONCAT(__nsi_hw_event_, fn), t) \
+		__attribute__((__used__)) NSI_NOASAN \
+		__attribute__((__section__("__ZNSIEVT,__e_" NSI_STRINGIFY(prio)))) = { \
+			.callback = fn, \
+			.timer = &t, \
+		}
+#else
 #define NSI_HW_EVENT(t, fn, prio)					\
 	static const struct nsi_hw_event_st NSI_CONCAT(NSI_CONCAT(__nsi_hw_event_, fn), t) \
 		__attribute__((__used__)) NSI_NOASAN					\
@@ -41,6 +50,7 @@ struct nsi_hw_event_st {
 			.callback = fn,	\
 			.timer = &t,	\
 		}
+#endif
 
 #ifdef __cplusplus
 }

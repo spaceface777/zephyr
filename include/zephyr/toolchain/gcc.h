@@ -125,7 +125,9 @@
 /* The GNU assembler for Cortex-M3 uses # for immediate values, not
  * comments, so the @nobits# trick does not work.
  */
-#if defined(CONFIG_ARM) || defined(CONFIG_ARM64)
+#if defined(ZEPHYR_TARGET_MACHO)
+#define _NODATA_SECTION(segment) __attribute__((section("__DATA,__bss")))
+#elif defined(CONFIG_ARM) || defined(CONFIG_ARM64)
 #define _NODATA_SECTION(segment)  __attribute__((section(#segment)))
 #else
 #define _NODATA_SECTION(segment)				\
@@ -187,6 +189,15 @@ do {                                                                    \
 /* Double indirection to ensure section names are expanded before
  * stringification
  */
+#if defined(ZEPHYR_TARGET_MACHO)
+#define __GENERIC_SECTION(segment) __attribute__((section("__DATA,__z_generic")))
+#define Z_GENERIC_SECTION(segment) __GENERIC_SECTION(segment)
+#define __GENERIC_DOT_SECTION(segment) __GENERIC_SECTION(segment)
+#define Z_GENERIC_DOT_SECTION(segment) __GENERIC_DOT_SECTION(segment)
+#define ___in_section(a, b, c) __attribute__((section("__DATA,__z_data")))
+#define __in_section(a, b, c) ___in_section(a, b, c)
+#define ___in_section_unique(a, b) __attribute__((section("__DATA,__bss")))
+#else
 #define __GENERIC_SECTION(segment) __attribute__((section(STRINGIFY(segment))))
 #define Z_GENERIC_SECTION(segment) __GENERIC_SECTION(segment)
 
@@ -204,6 +215,7 @@ do {                                                                    \
 	__attribute__((section("." Z_STRINGIFY(a)		\
 				"." __FILE__			\
 				"." Z_STRINGIFY(b))))
+#endif
 
 #ifndef __in_section_unique
 #define __in_section_unique(seg) ___in_section_unique(seg, __COUNTER__)
@@ -313,7 +325,12 @@ do {                                                                    \
 #define __no_optimization __attribute__((optimize("-O0")))
 #endif
 
-#ifndef __weak
+#if defined(ZEPHYR_TARGET_MACHO)
+#ifdef __weak
+#undef __weak
+#endif
+#define __weak __attribute__((__weak__))
+#elif !defined(__weak)
 #define __weak __attribute__((__weak__))
 #endif
 
@@ -542,7 +559,17 @@ do {                                                                    \
  * to generate named symbol/value pairs for kconfigs.
  */
 
-#if defined(CONFIG_ARM) || (defined(CONFIG_ARCH_POSIX) && defined(__arm__))
+#if defined(ZEPHYR_TARGET_MACHO)
+
+#define GEN_ABSOLUTE_SYM(name, value)               \
+	__asm__ __volatile__(".globl\t_" #name "\n\t.equ\t_" #name \
+		",%c0" :  : "n"(value))
+
+#define GEN_ABSOLUTE_SYM_KCONFIG(name, value)       \
+	__asm__ __volatile__(".globl\t_" #name                    \
+		"\n\t.equ\t_" #name "," #value)
+
+#elif defined(CONFIG_ARM) || (defined(CONFIG_ARCH_POSIX) && defined(__arm__))
 
 /*
  * GNU/ARM backend does not have a proper operand modifier which does not

@@ -115,14 +115,6 @@ static void z_init_static_threads(void)
 #define z_init_static_threads() do { } while (false)
 #endif /* CONFIG_MULTITHREADING */
 
-extern const struct init_entry __init_start[];
-extern const struct init_entry __init_EARLY_start[];
-extern const struct init_entry __init_PRE_KERNEL_1_start[];
-extern const struct init_entry __init_PRE_KERNEL_2_start[];
-extern const struct init_entry __init_POST_KERNEL_start[];
-extern const struct init_entry __init_APPLICATION_start[];
-extern const struct init_entry __init_end[];
-
 enum init_level {
 	INIT_LEVEL_EARLY = 0,
 	INIT_LEVEL_PRE_KERNEL_1,
@@ -134,9 +126,33 @@ enum init_level {
 #endif /* CONFIG_SMP */
 };
 
+#ifdef ZEPHYR_TARGET_MACHO
+#define Z_MACHO_INIT_RANGE(name, section_name) \
+	extern const struct init_entry __init_##name##_start[] \
+		__asm("section$start$__ZINIT$" section_name); \
+	extern const struct init_entry __init_##name##_end[] \
+		__asm("section$end$__ZINIT$" section_name)
+Z_MACHO_INIT_RANGE(EARLY, "__i0");
+Z_MACHO_INIT_RANGE(PRE_KERNEL_1, "__i1");
+Z_MACHO_INIT_RANGE(PRE_KERNEL_2, "__i2");
+Z_MACHO_INIT_RANGE(POST_KERNEL, "__i3");
+Z_MACHO_INIT_RANGE(APPLICATION, "__i4");
+#ifdef CONFIG_SMP
+Z_MACHO_INIT_RANGE(SMP, "__i5");
+#endif
+#else
+extern const struct init_entry __init_start[];
+extern const struct init_entry __init_EARLY_start[];
+extern const struct init_entry __init_PRE_KERNEL_1_start[];
+extern const struct init_entry __init_PRE_KERNEL_2_start[];
+extern const struct init_entry __init_POST_KERNEL_start[];
+extern const struct init_entry __init_APPLICATION_start[];
+extern const struct init_entry __init_end[];
+
 #ifdef CONFIG_SMP
 extern const struct init_entry __init_SMP_start[];
 #endif /* CONFIG_SMP */
+#endif /* ZEPHYR_TARGET_MACHO */
 
 /*
  * storage space for the interrupt stack
@@ -217,8 +233,40 @@ static void z_device_state_init(void)
  *
  * @param level init level to run.
  */
+#ifdef ZEPHYR_TARGET_MACHO
+static bool z_macho_init_entry_before(const struct init_entry *left,
+				      const struct init_entry *right)
+{
+	if (left->priority != right->priority) {
+		return left->priority < right->priority;
+	}
+	if (left->sub_priority != right->sub_priority) {
+		return left->sub_priority < right->sub_priority;
+	}
+	return left < right;
+}
+#endif
+
 static void z_sys_init_run_level(enum init_level level)
 {
+#ifdef ZEPHYR_TARGET_MACHO
+	static const struct init_entry *starts[] = {
+		__init_EARLY_start, __init_PRE_KERNEL_1_start,
+		__init_PRE_KERNEL_2_start, __init_POST_KERNEL_start,
+		__init_APPLICATION_start,
+#ifdef CONFIG_SMP
+		__init_SMP_start,
+#endif
+	};
+	static const struct init_entry *ends[] = {
+		__init_EARLY_end, __init_PRE_KERNEL_1_end,
+		__init_PRE_KERNEL_2_end, __init_POST_KERNEL_end,
+		__init_APPLICATION_end,
+#ifdef CONFIG_SMP
+		__init_SMP_end,
+#endif
+	};
+#else
 	static const struct init_entry *levels[] = {
 		__init_EARLY_start,
 		__init_PRE_KERNEL_1_start,
@@ -231,9 +279,31 @@ static void z_sys_init_run_level(enum init_level level)
 		/* End marker */
 		__init_end,
 	};
+#endif
 	const struct init_entry *entry;
 
+#ifdef ZEPHYR_TARGET_MACHO
+	const struct init_entry *previous = NULL;
+
+	while (true) {
+		const struct init_entry *candidate;
+
+		entry = NULL;
+		for (candidate = starts[level]; candidate < ends[level]; candidate++) {
+			if (previous != NULL &&
+			    !z_macho_init_entry_before(previous, candidate)) {
+				continue;
+			}
+			if (entry == NULL || z_macho_init_entry_before(candidate, entry)) {
+				entry = candidate;
+			}
+		}
+		if (entry == NULL) {
+			break;
+		}
+#else
 	for (entry = levels[level]; entry < levels[level+1]; entry++) {
+#endif
 		const struct device *dev = entry->dev;
 		int result = 0;
 
@@ -246,6 +316,9 @@ static void z_sys_init_run_level(enum init_level level)
 			result = entry->init_fn();
 		}
 		sys_trace_sys_init_exit(entry, level, result);
+#ifdef ZEPHYR_TARGET_MACHO
+		previous = entry;
+#endif
 	}
 }
 
@@ -255,8 +328,15 @@ extern void boot_banner(void);
 
 #ifdef CONFIG_STATIC_INIT_GNU
 
+#ifdef ZEPHYR_TARGET_MACHO
+extern void (*__zephyr_init_array_start[])()
+	__asm("section$start$__ZINITARR$__array");
+extern void (*__zephyr_init_array_end[])()
+	__asm("section$end$__ZINITARR$__array");
+#else
 extern void (*__zephyr_init_array_start[])();
 extern void (*__zephyr_init_array_end[])();
+#endif
 
 static void z_static_init_gnu(void)
 {

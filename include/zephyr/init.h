@@ -74,6 +74,10 @@ struct init_entry {
 	 * reference to it, otherwise it is set to NULL.
 	 */
 	const struct device *dev;
+#ifdef ZEPHYR_TARGET_MACHO
+	uint32_t priority;
+	uint32_t sub_priority;
+#endif
 };
 
 /** @cond INTERNAL_HIDDEN */
@@ -108,9 +112,25 @@ struct init_entry {
  * linker scripts to sort them according to the specified
  * level/priority/sub-priority.
  */
+#if defined(ZEPHYR_TARGET_MACHO)
+#define Z_MACHO_INIT_LEVEL_EARLY 0
+#define Z_MACHO_INIT_LEVEL_PRE_KERNEL_1 1
+#define Z_MACHO_INIT_LEVEL_PRE_KERNEL_2 2
+#define Z_MACHO_INIT_LEVEL_POST_KERNEL 3
+#define Z_MACHO_INIT_LEVEL_APPLICATION 4
+#define Z_MACHO_INIT_LEVEL_SMP 5
+#define Z_MACHO_INIT_LEVEL(level) UTIL_CAT(Z_MACHO_INIT_LEVEL_, level)
+#define Z_INIT_ENTRY_METADATA(prio, sub_prio) \
+	, .priority = (prio), .sub_priority = (sub_prio)
+#define Z_INIT_ENTRY_SECTION(level, prio, sub_prio) \
+	__attribute__((__section__("__ZINIT,__i" STRINGIFY(Z_MACHO_INIT_LEVEL(level)) \
+		"_" STRINGIFY(prio) "_" STRINGIFY(sub_prio))))
+#else
+#define Z_INIT_ENTRY_METADATA(prio, sub_prio)
 #define Z_INIT_ENTRY_SECTION(level, prio, sub_prio)                                                \
 	__attribute__((__section__(                                                                \
 		".z_init_" #level "_P_" STRINGIFY(prio) "_SUB_" STRINGIFY(sub_prio)"_")))
+#endif
 
 /** @endcond */
 
@@ -166,7 +186,9 @@ struct init_entry {
 #define SYS_INIT_NAMED(name, init_fn_, level, prio)                                       \
 	static const Z_DECL_ALIGN(struct init_entry)                                      \
 		Z_INIT_ENTRY_SECTION(level, prio, 0) __used __noasan                      \
-		Z_INIT_ENTRY_NAME(name) = {.init_fn = (init_fn_), .dev = NULL}            \
+		Z_INIT_ENTRY_NAME(name) = {                                                \
+			.init_fn = (init_fn_), .dev = NULL Z_INIT_ENTRY_METADATA(prio, 0) \
+		}
 
 /** @} */
 

@@ -41,7 +41,11 @@ struct timeval {
 #else /* CONFIG_NEWLIB_LIBC */
 
 #if defined(CONFIG_NATIVE_LIBC)
+#if defined(ZEPHYR_TARGET_MACHO)
+#include <sys/time.h>
+#else
 #include <bits/types/struct_timeval.h>
+#endif
 #else
 #include <sys/_timeval.h>
 #endif

@@ -944,9 +944,15 @@ __syscall int device_deinit(const struct device *dev);
  *
  * @param dev_id Device identifier.
  */
+#ifdef ZEPHYR_TARGET_MACHO
+#define Z_DEVICE_STATE_SECTION "__DATA,__z_devstate"
+#else
+#define Z_DEVICE_STATE_SECTION ".z_devstate"
+#endif
+
 #define Z_DEVICE_STATE_DEFINE(dev_id)                                          \
 	static Z_DECL_ALIGN(struct device_state) Z_DEVICE_STATE_NAME(dev_id)   \
-		__attribute__((__section__(".z_devstate")))
+		__attribute__((__section__(Z_DEVICE_STATE_SECTION)))
 
 /**
  * @brief Device flags obtained from DT.
@@ -1149,6 +1155,9 @@ device_get_dt_nodelabels(const struct device *dev)
 	COND_CODE_1(DT_NODE_EXISTS(node_id),                                   \
 		    (DT_DEP_ORD_STR_SORTABLE(node_id)), (0))
 
+#define Z_DEVICE_INIT_SUB_PRIO_VALUE(node_id)                                  \
+	COND_CODE_1(DT_NODE_EXISTS(node_id), (DT_DEP_ORD(node_id)), (0))
+
 /**
  * @brief Maximum device name length.
  *
@@ -1289,7 +1298,8 @@ device_get_dt_nodelabels(const struct device *dev)
 		level, prio, Z_DEVICE_INIT_SUB_PRIO(node_id))                                      \
 		Z_INIT_ENTRY_NAME(DEVICE_NAME_GET(dev_id)) = {                                     \
 			.init_fn = NULL,                                                           \
-			.dev = (const struct device *)&DEVICE_NAME_GET(dev_id),                    \
+			.dev = (const struct device *)&DEVICE_NAME_GET(dev_id)                     \
+				Z_INIT_ENTRY_METADATA(prio, Z_DEVICE_INIT_SUB_PRIO_VALUE(node_id))   \
 		}
 
 /**

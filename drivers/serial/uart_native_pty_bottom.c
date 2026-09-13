@@ -17,7 +17,11 @@
 #include <stdlib.h>
 #include <stdio.h>
 #include <string.h>
+#ifdef __APPLE__
+#include <termios.h>
+#else
 #include <pty.h>
+#endif
 #include <fcntl.h>
 #include <poll.h>
 #include <unistd.h>
@@ -137,6 +141,7 @@ int np_uart_open_pty(const char *uart_name, const char *auto_attach_cmd,
 	int err_nbr;
 	int ret;
 	int flags;
+	int termios_fd;
 
 	master_pty = posix_openpt(O_RDWR | O_NOCTTY | O_CLOEXEC);
 	if (master_pty == -1) {
@@ -180,6 +185,15 @@ int np_uart_open_pty(const char *uart_name, const char *auto_attach_cmd,
 
 	(void) err_nbr;
 
+	termios_fd = master_pty;
+#ifdef __APPLE__
+	/* Darwin does not provide terminal attributes through the master side. */
+	termios_fd = open(slave_pty_name, O_RDWR | O_NOCTTY | O_CLOEXEC);
+	if (termios_fd == -1) {
+		ERROR("Could not open the slave PTY to set terminal attributes\n");
+	}
+#endif
+
 	/*
 	 * Set terminal in "raw" mode:
 	 *  Not canonical (no line input)
@@ -188,7 +202,7 @@ int np_uart_open_pty(const char *uart_name, const char *auto_attach_cmd,
 	 *  No replacing of NL or CR
 	 *  No flow control
 	 */
-	ret = tcgetattr(master_pty, &ter);
+	ret = tcgetattr(termios_fd, &ter);
 	if (ret == -1) {
 		ERROR("Could not read terminal driver settings\n");
 	}
@@ -198,10 +212,13 @@ int np_uart_open_pty(const char *uart_name, const char *auto_attach_cmd,
 	ter.c_iflag &= ~(BRKINT | ICRNL | IGNBRK | IGNCR | INLCR | INPCK
 			 | ISTRIP | IXON | PARMRK);
 	ter.c_oflag &= ~OPOST;
-	ret = tcsetattr(master_pty, TCSANOW, &ter);
+	ret = tcsetattr(termios_fd, TCSANOW, &ter);
 	if (ret == -1) {
 		ERROR("Could not change terminal driver settings\n");
 	}
+#ifdef __APPLE__
+	close(termios_fd);
+#endif
 
 	nsi_print_trace("%s connected to pseudotty: %s\n",
 			  uart_name, slave_pty_name);

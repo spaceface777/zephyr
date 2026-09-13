@@ -738,8 +738,8 @@ union log_msg_generic *z_log_msg_claim_oldest(k_timeout_t *backoff)
 {
 	union log_msg_generic *msg = NULL;
 	struct log_msg_ptr *chosen = NULL;
-	log_timestamp_t t_min = sizeof(log_timestamp_t) > sizeof(uint32_t) ?
-				UINT64_MAX : UINT32_MAX;
+	log_timestamp_t t_min = (log_timestamp_t)(sizeof(log_timestamp_t) > sizeof(uint32_t) ?
+					     UINT64_MAX : UINT32_MAX);
 	int i = 0;
 
 	/* Else iterate on all available buffers and get the oldest message. */

@@ -14,10 +14,19 @@ intended for use in assembly code.
 
 import argparse
 import os
+import subprocess
 import sys
 
 from elftools.elf.elffile import ELFFile
 from elftools.elf.sections import SymbolTableSection
+
+
+MACHO_MAGICS = {
+    b"\xce\xfa\xed\xfe",
+    b"\xcf\xfa\xed\xfe",
+    b"\xfe\xed\xfa\xce",
+    b"\xfe\xed\xfa\xcf",
+}
 
 
 def get_symbol_table(obj):
@@ -28,7 +37,35 @@ def get_symbol_table(obj):
     raise LookupError("Could not find symbol table")
 
 
-def gen_offset_header(input_file, output_file):
+def elf_symbols(input_file):
+    obj = ELFFile(input_file)
+    for sym in get_symbol_table(obj).iter_symbols():
+        name = sym.name.decode("ascii") if isinstance(sym.name, bytes) else sym.name
+        if sym.entry["st_shndx"] != "SHN_ABS":
+            continue
+        if sym.entry["st_info"]["bind"] != "STB_GLOBAL":
+            continue
+        yield name, sym.entry["st_value"]
+
+
+def macho_symbols(input_name, nm):
+    result = subprocess.run(
+        [nm, "-P", input_name],
+        check=True,
+        stdout=subprocess.PIPE,
+        text=True,
+    )
+    for line in result.stdout.splitlines():
+        fields = line.split()
+        if len(fields) < 3 or fields[1] != "A":
+            continue
+        name = fields[0]
+        if name.startswith("_"):
+            name = name[1:]
+        yield name, int(fields[2], 16)
+
+
+def gen_offset_header(input_file, output_file, input_name=None, nm="nm"):
     basename = os.path.basename(output_file.name).upper().replace('.', '_').replace('-', '_')
     include_guard = f"__GEN_{basename}__"
     output_file.write(
@@ -43,19 +80,23 @@ def gen_offset_header(input_file, output_file):
 #define {include_guard}\n\n"""
     )
 
-    obj = ELFFile(input_file)
-    for sym in get_symbol_table(obj).iter_symbols():
-        if isinstance(sym.name, bytes):
-            sym.name = str(sym.name, 'ascii')
+    magic = input_file.read(4)
+    input_file.seek(0)
+    if magic in MACHO_MAGICS:
+        if input_name is None:
+            raise ValueError("Mach-O input requires a file name")
+        symbols = macho_symbols(input_name, nm)
+    else:
+        symbols = elf_symbols(input_file)
 
-        if not sym.name.endswith(('_OFFSET', '_SIZEOF')):
+    seen = set()
+    for name, value in symbols:
+        if not name.endswith(("_OFFSET", "_SIZEOF")):
             continue
-        if sym.entry['st_shndx'] != 'SHN_ABS':
-            continue
-        if sym.entry['st_info']['bind'] != 'STB_GLOBAL':
-            continue
-
-        output_file.write(f"#define {sym.name} 0x{sym.entry['st_value']:x}\n")
+        if name in seen:
+            raise ValueError(f"Duplicate absolute symbol: {name}")
+        seen.add(name)
+        output_file.write(f"#define {name} 0x{value:x}\n")
 
     output_file.write(f"\n#endif /* {include_guard} */\n")
 
@@ -71,10 +112,11 @@ if __name__ == '__main__':
 
     parser.add_argument("-i", "--input", required=True, help="Input object file")
     parser.add_argument("-o", "--output", required=True, help="Output header file")
+    parser.add_argument("--nm", default="nm", help="nm executable for Mach-O input")
 
     args = parser.parse_args()
 
     with open(args.input, 'rb') as input_file, open(args.output, 'w') as output_file:
-        ret = gen_offset_header(input_file, output_file)
+        ret = gen_offset_header(input_file, output_file, args.input, args.nm)
 
     sys.exit(ret)

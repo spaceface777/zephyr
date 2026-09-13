@@ -65,16 +65,27 @@ NSI_OPT?=-O0
 NSI_WARNINGS?=-Wall -Wpedantic
 #  Preprocessor flags
 NSI_CPPFLAGS?=-D_POSIX_C_SOURCE=200809L -D_XOPEN_SOURCE=600 -D_XOPEN_SOURCE_EXTENDED
+ifdef NSI_MACHO
+  NSI_CPPFLAGS+=-D_DARWIN_C_SOURCE
+endif
 
-NO_PIE_CO:=-fno-pie -fno-pic
+ifdef NSI_MACHO
+  NO_PIE_CO:=
+else
+  NO_PIE_CO:=-fno-pie -fno-pic
+endif
 DEPENDFLAGS:=-MMD -MP
 COMMON_BUILD_FLAGS:=-DNSI_RUNNER_BUILD ${NSI_DEBUG} ${NSI_WARNINGS} ${NSI_OPT} ${NO_PIE_CO} \
   -DNSI_N_CPUS=${NSI_N_CPUS} -ffunction-sections -fdata-sections ${DEPENDFLAGS} ${NSI_BUILD_OPTIONS}
 CFLAGS:=-std=c11 ${COMMON_BUILD_FLAGS} ${NSI_BUILD_C_OPTIONS}
 CXXFLAGS:=${COMMON_BUILD_FLAGS} ${NSI_BUILD_CXX_OPTIONS}
-FINALLINK_FLAGS:=${NO_PIE_CO} -no-pie  ${NSI_WARNINGS} \
-  -Wl,--gc-sections -ldl -pthread \
-  ${NSI_LINK_OPTIONS} -lm
+ifdef NSI_MACHO
+  FINALLINK_FLAGS:=${NSI_WARNINGS} -Wl,-dead_strip -pthread ${NSI_LINK_OPTIONS} -lm
+else
+  FINALLINK_FLAGS:=${NO_PIE_CO} -no-pie  ${NSI_WARNINGS} \
+    -Wl,--gc-sections -ldl -pthread \
+    ${NSI_LINK_OPTIONS} -lm
+endif
 
 no_default:
 	@echo "There is no default rule, please specify what you want to build,\
@@ -135,13 +146,24 @@ ${NSI_BUILD_PATH}/%.loc_cpusw.o: /% ${NSI_CONFIG_FILE}
 	  false; \
 	fi
 	@if [ ! -d $(dir $@) ]; then mkdir -p $(dir $@); fi
+ifdef NSI_MACHO
+	cp $< $@
+else
 	${NSI_OBJCOPY} --localize-hidden $< $@ -w --localize-symbol=_* ${NSI_LOCALIZE_OPTIONS}
+endif
 
+ifdef NSI_MACHO
+${NSI_EXE}: ${NSI_BUILD_PATH}/${RUNNER_LIB} ${LOCALIZED_EMBSW} ${NSI_EXTRA_LIBS} ${NSI_MACHO_LINK}
+	${NSI_PYTHON} ${NSI_MACHO_LINK} --cc ${NSI_LINKER} --nm ${NSI_NM} -- \
+	  -Wl,-all_load ${LOCALIZED_EMBSW} ${NSI_BUILD_PATH}/${RUNNER_LIB} \
+	  ${NSI_EXTRA_LIBS} -o $@ ${FINALLINK_FLAGS}
+else
 ${NSI_EXE}: ${NSI_BUILD_PATH}/${RUNNER_LIB} ${LOCALIZED_EMBSW} ${NSI_EXTRA_LIBS} \
  ${NSI_BUILD_PATH}/linker_script.ld
 	${NSI_LINKER} -Wl,--whole-archive ${LOCALIZED_EMBSW} ${NSI_BUILD_PATH}/${RUNNER_LIB} \
 	  ${NSI_EXTRA_LIBS} -Wl,--no-whole-archive \
 	  -o $@ ${FINALLINK_FLAGS} -T ${NSI_BUILD_PATH}/linker_script.ld
+endif
 
 Makefile: ;
 

@@ -38,10 +38,27 @@ extern "C" {
  * Note that for the PRE and ON_EXIT levels neither the Zephyr kernel or
  * any Zephyr thread are running.
  */
+#ifdef __APPLE__
+struct native_macho_task {
+	void (*function)(void);
+	unsigned int priority;
+};
+#define Z_MACHO_NATIVE_LEVEL_PRE_BOOT_1 0
+#define Z_MACHO_NATIVE_LEVEL_PRE_BOOT_2 1
+#define Z_MACHO_NATIVE_LEVEL_PRE_BOOT_3 2
+#define Z_MACHO_NATIVE_LEVEL_FIRST_SLEEP 3
+#define Z_MACHO_NATIVE_LEVEL_ON_EXIT 4
+#define Z_MACHO_NATIVE_LEVEL(level) _CONCAT(Z_MACHO_NATIVE_LEVEL_, level)
+#define NATIVE_TASK(fn, level, prio) \
+	static const struct native_macho_task _CONCAT(__native_task_, fn) __used __noasan \
+	__attribute__((__section__("__ZNATIVE,__n" STRINGIFY(Z_MACHO_NATIVE_LEVEL(level)) \
+		"_" STRINGIFY(prio)))) = { .function = fn, .priority = prio }
+#else
 #define NATIVE_TASK(fn, level, prio)	\
 	static void (* const _CONCAT(__native_task_, fn))() __used __noasan \
 	__attribute__((__section__(".native_" #level STRINGIFY(prio) "_task")))\
 	= fn
+#endif
 
 
 #define _NATIVE_PRE_BOOT_1_LEVEL	0

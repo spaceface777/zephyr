@@ -9,6 +9,12 @@
 
 #define THREAD_INFO_UNIMPLEMENTED	0xffffffff
 
+#ifdef ZEPHYR_TARGET_MACHO
+#define THREAD_INFO_SECTION "__DATA,__dbg_thread"
+#else
+#define THREAD_INFO_SECTION ".dbg_thread_info"
+#endif
+
 enum {
 	THREAD_INFO_OFFSET_VERSION,
 	THREAD_INFO_OFFSET_K_CURR_THREAD,
@@ -39,7 +45,7 @@ enum {
  * scheme.
  * Only version 1 is backward compatible to version 0.
  */
-__attribute__((used, section(".dbg_thread_info")))
+__attribute__((used, section(THREAD_INFO_SECTION)))
 const size_t _kernel_thread_info_offsets[] = {
 	/* Version 0 starts */
 	[THREAD_INFO_OFFSET_VERSION] = 1,
@@ -159,15 +165,21 @@ const size_t _kernel_thread_info_offsets[] = {
 #endif /* CONFIG_ARC */
 };
 
+#ifndef ZEPHYR_TARGET_MACHO
 extern const size_t __attribute__((alias("_kernel_thread_info_offsets")))
 		_kernel_openocd_offsets[ARRAY_SIZE(_kernel_thread_info_offsets)];
+#endif
 
-__attribute__((used, section(".dbg_thread_info")))
+__attribute__((used, section(THREAD_INFO_SECTION)))
 const size_t _kernel_thread_info_num_offsets = ARRAY_SIZE(_kernel_thread_info_offsets);
+#ifndef ZEPHYR_TARGET_MACHO
 extern const size_t __attribute__((alias("_kernel_thread_info_num_offsets")))
 		_kernel_openocd_num_offsets;
+#endif
 
-__attribute__((used, section(".dbg_thread_info")))
+__attribute__((used, section(THREAD_INFO_SECTION)))
 const uint8_t _kernel_thread_info_size_t_size = (uint8_t)sizeof(size_t);
+#ifndef ZEPHYR_TARGET_MACHO
 extern const uint8_t __attribute__((alias("_kernel_thread_info_size_t_size")))
 		_kernel_openocd_size_t_size;
+#endif
