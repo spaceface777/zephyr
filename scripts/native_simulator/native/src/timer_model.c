@@ -120,7 +120,11 @@ static void hwtimer_update_timer(void)
 
 static inline void host_clock_gettime(struct timespec *tv)
 {
-#if defined(CLOCK_MONOTONIC_RAW)
+#ifdef QSIM_EMBEDDED_RUNNER
+	const uint64_t now = nsi_hws_get_time();
+	tv->tv_sec = (time_t)(now / 1000000U);
+	tv->tv_nsec = (long)((now % 1000000U) * 1000U);
+#elif defined(CLOCK_MONOTONIC_RAW)
 	clock_gettime(CLOCK_MONOTONIC_RAW, tv);
 #else
 	clock_gettime(CLOCK_MONOTONIC, tv);
@@ -146,6 +150,12 @@ static void hwtimer_init(void)
 	hw_timer_tick_timer = NSI_NEVER;
 	hw_timer_awake_timer = NSI_NEVER;
 	hwtimer_update_timer();
+#ifdef QSIM_EMBEDDED_RUNNER
+	extern uint64_t qsim_embedded_rtc_epoch_us(void);
+	real_time_mode = false;
+	reset_rtc = true;
+	rtc_offset = (int64_t)qsim_embedded_rtc_epoch_us();
+#else
 	if (real_time_mode) {
 		boot_time = get_host_us_time();
 		last_radj_rtime = boot_time;
@@ -160,6 +170,7 @@ static void hwtimer_init(void)
 
 		rtc_offset += realhosttime;
 	}
+#endif
 }
 
 NSI_TASK(hwtimer_init, HW_INIT, 10);
@@ -177,6 +188,7 @@ void hwtimer_enable(uint64_t period)
 
 static void hwtimer_tick_timer_reached(void)
 {
+#ifndef QSIM_EMBEDDED_RUNNER
 	if (real_time_mode) {
 		uint64_t expected_rt = (hw_timer_tick_timer - last_radj_stime)
 				    / clock_ratio
@@ -207,6 +219,7 @@ static void hwtimer_tick_timer_reached(void)
 			(void) nanosleep(&requested_time, &remaining);
 		}
 	}
+#endif
 
 	hw_timer_tick_timer += tick_p;
 	hwtimer_update_timer();
@@ -363,6 +376,12 @@ int64_t hwtimer_get_simu_rtc_time(void)
  */
 void hwtimer_get_pseudohost_rtc_time(uint32_t *nsec, uint64_t *sec)
 {
+#ifdef QSIM_EMBEDDED_RUNNER
+	const uint64_t now_ns = (nsi_hws_get_time() + rtc_offset) * 1000U;
+	*nsec = (uint32_t)(now_ns % 1000000000U);
+	*sec = now_ns / 1000000000U;
+	return;
+#else
 	/*
 	 * Note: long double has a 64bits mantissa in x86.
 	 * Therefore to avoid loss of precision after 500 odd years into
@@ -400,6 +419,7 @@ void hwtimer_get_pseudohost_rtc_time(uint32_t *nsec, uint64_t *sec)
 
 	*nsec = fmodl(st, 1e9L);
 	*sec = st / 1e9L;
+#endif
 }
 
 static struct {

@@ -30,7 +30,14 @@ pid_t getpid(void)
 	return 42;
 }
 #ifdef CONFIG_POSIX_MULTI_PROCESS_ALIAS_GETPID
+#ifdef ZEPHYR_TARGET_MACHO
+pid_t _getpid(void)
+{
+	return getpid();
+}
+#else
 FUNC_ALIAS(getpid, _getpid, pid_t);
+#endif /* ZEPHYR_TARGET_MACHO */
 #endif /* CONFIG_POSIX_MULTI_PROCESS_ALIAS_GETPID */
 
 clock_t times(struct tms *buffer)

@@ -10,6 +10,22 @@ if(CMAKE_HOST_APPLE AND NOT CMAKE_HOST_SYSTEM_PROCESSOR MATCHES "^(arm64|aarch64
   message(FATAL_ERROR "The experimental macOS native simulator port requires Apple Silicon.")
 endif()
 
+if(CONFIG_NATIVE_SIM_EMBEDDED)
+  if(NOT CONFIG_64BIT)
+    message(FATAL_ERROR "The embedded native_sim profile requires a 64-bit host ABI.")
+  endif()
+  if(CONFIG_SMP OR NOT CONFIG_NATIVE_SIMULATOR_NUMBER_MCUS EQUAL 1)
+    message(FATAL_ERROR "The embedded native_sim profile supports one MCU and no SMP.")
+  endif()
+  if(CONFIG_THREAD_LOCAL_STORAGE OR CONFIG_EXTERNAL_LIBC OR CONFIG_STATIC_INIT_GNU)
+    message(FATAL_ERROR
+      "The embedded native_sim profile rejects compiler TLS, external libc, and constructors.")
+  endif()
+  # Tentative common symbols do not belong to a section and cannot be included
+  # in a complete per-instance reset range.
+  zephyr_compile_options(-fno-common)
+endif()
+
 # This native_simulator library is used to pass options to the
 # native_simulator runner build. Currently the following are used:
 #  INTERFACE_COMPILE_OPTIONS:
@@ -39,6 +55,9 @@ endif()
 #        info.
 #        We use target_link_options() instead
 add_library(native_simulator INTERFACE)
+if(CONFIG_NATIVE_SIM_EMBEDDED)
+  target_compile_options(native_simulator INTERFACE -fno-common)
+endif()
 set_property(TARGET native_simulator PROPERTY RUNNER_LINK_LIBRARIES "")
 set_property(TARGET native_simulator PROPERTY LOCALIZE_EXTRA_OPTIONS "")
 

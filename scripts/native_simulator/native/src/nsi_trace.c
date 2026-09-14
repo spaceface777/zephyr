@@ -28,12 +28,17 @@ static int is_a_tty[2] = {-1, -1};
 
 static void decide_about_color(void)
 {
+#ifdef QSIM_EMBEDDED_RUNNER
+	is_a_tty[0] = 0;
+	is_a_tty[1] = 0;
+#else
 	if (is_a_tty[0] == -1) {
 		is_a_tty[0] = isatty(STDOUT_FILENO);
 	}
 	if (is_a_tty[1] == -1) {
 		is_a_tty[1] = isatty(STDERR_FILENO);
 	}
+#endif
 }
 
 #define ERROR 0
@@ -48,54 +53,45 @@ static const char * const trace_type_esc_start[] = {
 
 static const char trace_esc_end[] = "\x1b[0;39m"; /* Reset all styles */
 
+#ifdef QSIM_EMBEDDED_RUNNER
+extern void qsim_embedded_diagnostic_v(int level, const char *format, va_list arguments);
+#endif
+
 void nsi_vprint_warning(const char *format, va_list vargs)
 {
-	if (is_a_tty[ST_ERR] == -1) {
-		decide_about_color();
-	}
-	if (is_a_tty[ST_ERR]) {
-		fprintf(stderr, "%s", trace_type_esc_start[WARN]);
-	}
-
+#ifdef QSIM_EMBEDDED_RUNNER
+	qsim_embedded_diagnostic_v(WARN, format, vargs);
+#else
+	if (is_a_tty[ST_ERR] == -1) decide_about_color();
+	if (is_a_tty[ST_ERR]) fprintf(stderr, "%s", trace_type_esc_start[WARN]);
 	vfprintf(stderr, format, vargs);
-
-	if (is_a_tty[ST_ERR]) {
-		fprintf(stderr, "%s", trace_esc_end);
-	}
+	if (is_a_tty[ST_ERR]) fprintf(stderr, "%s", trace_esc_end);
+#endif
 }
 
 void nsi_vprint_error_and_exit(const char *format, va_list vargs)
 {
-	if (is_a_tty[ST_ERR] == -1) {
-		decide_about_color();
-	}
-	if (is_a_tty[ST_ERR]) {
-		fprintf(stderr, "%s", trace_type_esc_start[ERROR]);
-	}
-
+#ifdef QSIM_EMBEDDED_RUNNER
+	qsim_embedded_diagnostic_v(ERROR, format, vargs);
+#else
+	if (is_a_tty[ST_ERR] == -1) decide_about_color();
+	if (is_a_tty[ST_ERR]) fprintf(stderr, "%s", trace_type_esc_start[ERROR]);
 	vfprintf(stderr, format, vargs);
-
-	if (is_a_tty[ST_ERR]) {
-		fprintf(stderr, "%s\n", trace_esc_end);
-	}
-
+	if (is_a_tty[ST_ERR]) fprintf(stderr, "%s\n", trace_esc_end);
+#endif
 	nsi_exit(1);
 }
 
 void nsi_vprint_trace(const char *format, va_list vargs)
 {
-	if (is_a_tty[ST_OUT] == -1) {
-		decide_about_color();
-	}
-	if (is_a_tty[ST_OUT]) {
-		fprintf(stdout, "%s", trace_type_esc_start[TRACE]);
-	}
-
+#ifdef QSIM_EMBEDDED_RUNNER
+	qsim_embedded_diagnostic_v(TRACE, format, vargs);
+#else
+	if (is_a_tty[ST_OUT] == -1) decide_about_color();
+	if (is_a_tty[ST_OUT]) fprintf(stdout, "%s", trace_type_esc_start[TRACE]);
 	vfprintf(stdout, format, vargs);
-
-	if (is_a_tty[ST_OUT]) {
-		fprintf(stdout, "%s", trace_esc_end);
-	}
+	if (is_a_tty[ST_OUT]) fprintf(stdout, "%s", trace_esc_end);
+#endif
 }
 
 static void trace_disable_color(char *argv, int offset)

@@ -14,6 +14,11 @@
 #include "nsi_timer_model.h"
 #include "nsi_hw_scheduler.h"
 #include "nsi_tasks.h"
+#ifdef QSIM_EMBEDDED_RUNNER
+#include "nsi_host_trampolines.h"
+#define realloc(pointer, size) nsi_host_realloc((pointer), (size))
+#define free(pointer) nsi_host_free(pointer)
+#endif
 
 static int s_argc, test_argc;
 static char **s_argv, **test_argv;

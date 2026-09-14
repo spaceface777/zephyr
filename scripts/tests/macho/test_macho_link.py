@@ -10,6 +10,24 @@ MACHO_LINK = importlib.util.module_from_spec(SPEC)
 SPEC.loader.exec_module(MACHO_LINK)
 
 
+def test_input_files_unwraps_force_load(tmp_path):
+    archive = tmp_path / "libzephyr.a"
+    archive.touch()
+    obj = tmp_path / "offsets.c.obj"
+    obj.touch()
+
+    command = [
+        f"-Wl,-force_load,{archive}",
+        str(obj),
+        "@ignored-response-file",
+        str(tmp_path / "missing.a"),
+        "-o",
+        "zephyr_pre0.elf",
+    ]
+
+    assert list(MACHO_LINK.input_files(command)) == [str(archive), str(obj)]
+
+
 def test_registration_options_sort_and_localize(tmp_path):
     symbols = [
         ("__ZINIT", "__i4_100_0", "_late"),

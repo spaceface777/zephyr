@@ -67,6 +67,7 @@ static void nsi_hws_signal_end_handler(int sig)
  */
 static void nsi_hws_set_sig_handler(void)
 {
+#ifndef QSIM_EMBEDDED_RUNNER
 	struct sigaction act;
 
 	act.sa_handler = nsi_hws_signal_end_handler;
@@ -76,6 +77,7 @@ static void nsi_hws_set_sig_handler(void)
 
 	NSI_SAFE_CALL(sigaction(SIGTERM, &act, NULL));
 	NSI_SAFE_CALL(sigaction(SIGINT, &act, NULL));
+#endif
 }
 
 
@@ -111,9 +113,12 @@ void nsi_hws_find_next_event(void)
 	next_timer_time  = *__nsi_hw_events_start[0].timer;
 
 	for (unsigned int i = 1; i < number_of_events ; i++) {
-		if (next_timer_time > *__nsi_hw_events_start[i].timer) {
+		const uint64_t candidate_time = *__nsi_hw_events_start[i].timer;
+		if (next_timer_time > candidate_time ||
+		    (next_timer_time == candidate_time &&
+		     __nsi_hw_events_start[next_timer_index].priority > __nsi_hw_events_start[i].priority)) {
 			next_timer_index = i;
-			next_timer_time = *__nsi_hw_events_start[i].timer;
+			next_timer_time = candidate_time;
 		}
 	}
 }

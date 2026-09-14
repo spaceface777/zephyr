@@ -2090,17 +2090,33 @@ if(CONFIG_BUILD_OUTPUT_EXE)
     set(MAKE "${CMAKE_MAKE_PROGRAM}" CACHE FILEPATH "cmake defined make")
   endif()
   find_program(MAKE make REQUIRED)
-  add_custom_target(native_runner_executable
-    ALL
-    COMMENT "Building native simulator runner, and linking final executable"
-    COMMAND
-    ${MAKE} -f ${ZEPHYR_BASE}/scripts/native_simulator/Makefile all --warn-undefined-variables
-      -r NSI_CONFIG_FILE=${APPLICATION_BINARY_DIR}/zephyr/NSI/nsi_config
-    # nsi_config is created by the board cmake file
-    DEPENDS ${logical_target_for_zephyr_elf}
-    BYPRODUCTS ${KERNEL_EXE_NAME}
-  )
-  set(BYPRODUCT_KERNEL_EXE_NAME "${PROJECT_BINARY_DIR}/${KERNEL_EXE_NAME}" CACHE FILEPATH "Kernel exe file" FORCE)
+  if(CONFIG_NATIVE_SIM_EMBEDDED)
+    add_custom_target(native_runner_executable
+      ALL
+      COMMENT "Building native simulator runner archive for static composition"
+      COMMAND
+      ${MAKE} -f ${ZEPHYR_BASE}/scripts/native_simulator/Makefile runner_lib --warn-undefined-variables
+        -r NSI_CONFIG_FILE=${APPLICATION_BINARY_DIR}/zephyr/NSI/nsi_config
+      # nsi_config is created by the board cmake file
+      DEPENDS ${logical_target_for_zephyr_elf}
+      BYPRODUCTS ${APPLICATION_BINARY_DIR}/zephyr/NSI/runner.a
+    )
+    # Post-build analyzers inspect the canonical prelink in embedded mode.
+    set(BYPRODUCT_KERNEL_EXE_NAME "${PROJECT_BINARY_DIR}/${KERNEL_ELF_NAME}"
+        CACHE FILEPATH "Embedded kernel prelink file" FORCE)
+  else()
+    add_custom_target(native_runner_executable
+      ALL
+      COMMENT "Building native simulator runner, and linking final executable"
+      COMMAND
+      ${MAKE} -f ${ZEPHYR_BASE}/scripts/native_simulator/Makefile all --warn-undefined-variables
+        -r NSI_CONFIG_FILE=${APPLICATION_BINARY_DIR}/zephyr/NSI/nsi_config
+      # nsi_config is created by the board cmake file
+      DEPENDS ${logical_target_for_zephyr_elf}
+      BYPRODUCTS ${KERNEL_EXE_NAME}
+    )
+    set(BYPRODUCT_KERNEL_EXE_NAME "${PROJECT_BINARY_DIR}/${KERNEL_EXE_NAME}" CACHE FILEPATH "Kernel exe file" FORCE)
+  endif()
 endif()
 
 if(CONFIG_BUILD_OUTPUT_INFO_HEADER)

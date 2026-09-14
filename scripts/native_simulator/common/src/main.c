@@ -46,7 +46,13 @@ int nsi_exit_inner(int exit_code)
 
 NSI_FUNC_NORETURN void nsi_exit(int exit_code)
 {
+#ifdef QSIM_EMBEDDED_RUNNER
+	extern void qsim_embedded_native_exit(int exit_code);
+	qsim_embedded_native_exit(exit_code);
+	NSI_CODE_UNREACHABLE;
+#else
 	exit(nsi_exit_inner(exit_code));
+#endif
 }
 
 /**
@@ -64,8 +70,10 @@ void nsi_init(int argc, char *argv[])
 	 * Note that glibc ignores size. But just in case we set a reasonable
 	 * number in case somebody tries to compile against a different library
 	 */
+#ifndef QSIM_EMBEDDED_RUNNER
 	setvbuf(stdout, NULL, _IOLBF, 512);
 	setvbuf(stderr, NULL, _IOLBF, 512);
+#endif
 
 	nsi_run_tasks(NSITASK_PRE_BOOT_1_LEVEL);
 	for (int i = 0; i < NSI_N_CPUS; i++) {

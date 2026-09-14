@@ -46,6 +46,10 @@ NSI_EXTRA_SRCS?=
 NSI_EXTRA_INCLUDES?=
 #  Extra libraries to be linked to the final executable
 NSI_EXTRA_LIBS?=
+# Explicit runner source lists permit package manifests to identify every input.
+# Empty values retain the standalone runner's historical directory discovery.
+NSI_RUNNER_CORE_SRCS?=
+NSI_RUNNER_NATIVE_SRCS?=
 
 SHELL?=bash
 #  Compiler
@@ -93,9 +97,17 @@ no_default:
 
 RUNNER_LIB:=runner.a
 
-SRCS:=$(shell ls ${NSI_PATH}common/src/*.c)
+ifeq ($(strip ${NSI_RUNNER_CORE_SRCS}),)
+  # Standalone builds retain the pthread NCT/NCE backend. Embedded builds
+  # provide an explicit source list selecting the fiber implementations.
+  NSI_RUNNER_CORE_SRCS:=$(filter-out %/nct_fiber.c %/nce_fiber.c %/nsi_context_if.c,$(wildcard ${NSI_PATH}common/src/*.c))
+endif
+SRCS:=${NSI_RUNNER_CORE_SRCS}
 ifdef NSI_NATIVE
-  SRCS+=$(shell ls ${NSI_PATH}native/src/*.c)
+  ifeq ($(strip ${NSI_RUNNER_NATIVE_SRCS}),)
+    NSI_RUNNER_NATIVE_SRCS:=$(shell ls ${NSI_PATH}native/src/*.c)
+  endif
+  SRCS+=${NSI_RUNNER_NATIVE_SRCS}
 endif
 
 INCLUDES:=-I${NSI_PATH}common/src/include/ \

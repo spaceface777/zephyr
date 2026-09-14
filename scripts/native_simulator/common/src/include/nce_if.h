@@ -19,11 +19,11 @@ extern "C" {
  */
 
 void *nce_init(void);
-void nce_terminate(void *this);
-void nce_boot_cpu(void *this, void (*start_routine)(void));
-void nce_halt_cpu(void *this);
-void nce_wake_cpu(void *this);
-int nce_is_cpu_running(void *this);
+void nce_terminate(void *this_arg);
+void nce_boot_cpu(void *this_arg, void (*start_routine)(void));
+void nce_halt_cpu(void *this_arg);
+void nce_wake_cpu(void *this_arg);
+int nce_is_cpu_running(void *this_arg);
 
 #ifdef __cplusplus
 }

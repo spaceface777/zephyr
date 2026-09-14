@@ -16,6 +16,17 @@ if BOARD_NATIVE_SIM
 
 comment "Native Simulator (Single Core) options"
 
+config NATIVE_SIM_EMBEDDED
+	bool "Build an object package for static simulator composition"
+	depends on 64BIT
+	depends on !SMP
+	depends on !THREAD_LOCAL_STORAGE
+	depends on !STATIC_INIT_GNU
+	depends on !EXTERNAL_LIBC
+	help
+	  Builds the single-MCU, compiler-TLS-free profile used by an embedding
+	  simulator. The ordinary standalone native_sim profile remains available.
+
 config NATIVE_SIM_SLOWDOWN_TO_REAL_TIME
 	bool "Slow down execution to real time"
 	default n if ARCH_POSIX_LIBFUZZER

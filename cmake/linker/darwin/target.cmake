@@ -31,16 +31,31 @@ function(toolchain_ld_link_elf)
   target_link_options(${TOOLCHAIN_LD_LINK_ELF_TARGET_ELF} PRIVATE
     -nostdlib
     ${LINKERFLAGPREFIX},-r
-    ${LINKERFLAGPREFIX},-all_load
     ${LINKERFLAGPREFIX},-map,${TOOLCHAIN_LD_LINK_ELF_OUTPUT_MAP}
   )
+  add_dependencies(${TOOLCHAIN_LD_LINK_ELF_TARGET_ELF} ${WHOLE_ARCHIVE_LIBS})
+  set(macho_whole_archive_libs)
+  foreach(lib ${WHOLE_ARCHIVE_LIBS})
+    list(APPEND macho_whole_archive_libs
+      ${LINKERFLAGPREFIX},-force_load,$<TARGET_FILE:${lib}>
+    )
+  endforeach()
+
+  get_property(zephyr_std_libs TARGET linker PROPERTY lib_include_dir)
+  get_property(link_order TARGET linker PROPERTY link_order_library)
+  foreach(lib ${link_order})
+    get_property(link_flag TARGET linker PROPERTY ${lib}_library)
+    list(APPEND zephyr_std_libs ${link_flag})
+  endforeach()
+
   target_link_libraries(
     ${TOOLCHAIN_LD_LINK_ELF_TARGET_ELF}
     ${TOOLCHAIN_LD_LINK_ELF_LIBRARIES_PRE_SCRIPT}
-    ${WHOLE_ARCHIVE_LIBS}
+    ${macho_whole_archive_libs}
     ${NO_WHOLE_ARCHIVE_LIBS}
     $<TARGET_OBJECTS:${OFFSETS_LIB}>
     ${TOOLCHAIN_LD_LINK_ELF_LIBRARIES_POST_SCRIPT}
+    ${zephyr_std_libs}
   )
   set_property(TARGET ${TOOLCHAIN_LD_LINK_ELF_TARGET_ELF} APPEND PROPERTY
     LINK_DEPENDS

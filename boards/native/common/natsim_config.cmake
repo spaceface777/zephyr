@@ -23,6 +23,16 @@ if("${LINKER}" STREQUAL "lld")
   target_link_options(native_simulator INTERFACE "-fuse-ld=lld")
 endif()
 
+file(GLOB nsi_runner_core_sources CONFIGURE_DEPENDS "${NSI_DIR}/common/src/*.c")
+file(GLOB nsi_runner_native_sources CONFIGURE_DEPENDS "${NSI_DIR}/native/src/*.c")
+if(CONFIG_NATIVE_SIM_EMBEDDED)
+  list(FILTER nsi_runner_core_sources EXCLUDE REGEX "/(nct|nce|nsi_host_trampolines)\\.c$")
+else()
+  list(FILTER nsi_runner_core_sources EXCLUDE REGEX "/(nct_fiber|nce_fiber|nsi_context_if)\\.c$")
+endif()
+string(JOIN " " nsi_runner_core_sources ${nsi_runner_core_sources})
+string(JOIN " " nsi_runner_native_sources ${nsi_runner_native_sources})
+
 set(nsi_config_content
   ${nsi_config_content}
   "NSI_AR:=${CMAKE_AR}"
@@ -41,6 +51,8 @@ set(nsi_config_content
   "NSI_EXTRA_LIBS:=$<JOIN:$<TARGET_PROPERTY:native_simulator,RUNNER_LINK_LIBRARIES>,\ >"
   "NSI_PATH:=${NSI_DIR}/"
   "NSI_N_CPUS:=${CONFIG_NATIVE_SIMULATOR_NUMBER_MCUS}"
+  "NSI_RUNNER_CORE_SRCS:=${nsi_runner_core_sources}"
+  "NSI_RUNNER_NATIVE_SRCS:=${nsi_runner_native_sources}"
   "NSI_LOCALIZE_OPTIONS:=--localize-symbol=CONFIG_* $<JOIN:$<TARGET_PROPERTY:native_simulator,LOCALIZE_EXTRA_OPTIONS>,\ >"
 )
 

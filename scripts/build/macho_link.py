@@ -22,9 +22,12 @@ NM_ABSOLUTE = re.compile(r"^[0-9a-fA-F]+ \(absolute\) external .* ([^ ]+)$")
 
 
 def input_files(command):
+    force_load_prefix = "-Wl,-force_load,"
     for arg in command:
         if arg.startswith("@"):
             continue
+        if arg.startswith(force_load_prefix):
+            arg = arg[len(force_load_prefix):]
         if os.path.isfile(arg) and arg.endswith((".a", ".o", ".obj")):
             yield arg
 

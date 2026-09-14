@@ -23,6 +23,12 @@ if(CONFIG_64BIT)
     )
   endif()
   zephyr_compile_options(-fPIC)
+  if(CONFIG_NATIVE_SIM_EMBEDDED)
+    # GCC's AArch64 outlined atomics pull in libgcc's process constructor.
+    # Embedded packages must not contain automatic constructors.
+    zephyr_compile_options(-mno-outline-atomics)
+    target_compile_options(native_simulator INTERFACE -mno-outline-atomics)
+  endif()
 else()
   if(${WORDSIZE} STREQUAL "64")
     message(FATAL_ERROR
