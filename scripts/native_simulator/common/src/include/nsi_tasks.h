@@ -54,13 +54,8 @@ struct nsi_macho_task {
 	void (*function)(void);
 	unsigned int priority;
 };
-#ifdef QSIM_EMBEDDED_RUNNER
-#define NSI_MACHO_TASK_STORAGE __attribute__((visibility("hidden")))
-#else
-#define NSI_MACHO_TASK_STORAGE static
-#endif
 #define NSI_TASK(fn, level, prio) \
-	NSI_MACHO_TASK_STORAGE const struct nsi_macho_task NSI_CONCAT(__nsi_task_, fn) \
+	static const struct nsi_macho_task NSI_CONCAT(__nsi_task_, fn) \
 	__attribute__((__used__)) NSI_NOASAN \
 	__attribute__((__section__("__ZNSITASK,__s" \
 		NSI_STRINGIFY(NSITASK_##level##_LEVEL) "_" NSI_STRINGIFY(prio)))) = { \

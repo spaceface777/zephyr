@@ -44,17 +44,6 @@ int nsi_exit_inner(int exit_code)
 	return max_exit_code;
 }
 
-NSI_FUNC_NORETURN void nsi_exit(int exit_code)
-{
-#ifdef QSIM_EMBEDDED_RUNNER
-	extern void qsim_embedded_native_exit(int exit_code);
-	qsim_embedded_native_exit(exit_code);
-	NSI_CODE_UNREACHABLE;
-#else
-	exit(nsi_exit_inner(exit_code));
-#endif
-}
-
 /**
  * Run all early native simulator initialization steps, including command
  * line parsing and CPU start, until we are ready to let the HW models
@@ -64,17 +53,6 @@ NSI_FUNC_NORETURN void nsi_exit(int exit_code)
  */
 void nsi_init(int argc, char *argv[])
 {
-	/*
-	 * Let's ensure that even if we are redirecting to a file, we get stdout
-	 * and stderr line buffered (default for console)
-	 * Note that glibc ignores size. But just in case we set a reasonable
-	 * number in case somebody tries to compile against a different library
-	 */
-#ifndef QSIM_EMBEDDED_RUNNER
-	setvbuf(stdout, NULL, _IOLBF, 512);
-	setvbuf(stderr, NULL, _IOLBF, 512);
-#endif
-
 	nsi_run_tasks(NSITASK_PRE_BOOT_1_LEVEL);
 	for (int i = 0; i < NSI_N_CPUS; i++) {
 		nsif_cpun_pre_cmdline_hooks(i);
@@ -113,23 +91,3 @@ void nsi_exec_for(uint64_t us)
 		nsi_hws_one_event();
 	} while (nsi_hws_get_time() < (start + us));
 }
-
-#ifndef NSI_NO_MAIN
-
-/**
- *
- * Note that this main() is not used when building fuzz cases,
- * as libfuzzer has its own main(),
- * and calls the "OS" through a per-case fuzz test entry point.
- */
-int main(int argc, char *argv[])
-{
-	nsi_init(argc, argv);
-	while (true) {
-		nsi_hws_one_event();
-	}
-
-	NSI_CODE_UNREACHABLE; /* LCOV_EXCL_LINE */
-}
-
-#endif /* NSI_NO_MAIN */

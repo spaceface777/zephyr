@@ -16,16 +16,12 @@ if BOARD_NATIVE_SIM
 
 comment "Native Simulator (Single Core) options"
 
-config NATIVE_SIM_EMBEDDED
-	bool "Build an object package for static simulator composition"
-	depends on 64BIT
-	depends on !SMP
-	depends on !THREAD_LOCAL_STORAGE
-	depends on !STATIC_INIT_GNU
-	depends on !EXTERNAL_LIBC
+config NATIVE_SIM_LIBRARY
+	bool "Build the runner archive without a final executable"
 	help
-	  Builds the single-MCU, compiler-TLS-free profile used by an embedding
-	  simulator. The ordinary standalone native_sim profile remains available.
+	  Produce the firmware prelink and runner archive for an external final
+	  link. This changes build output only, not the execution backend or
+	  supported firmware configuration.
 
 config NATIVE_SIM_SLOWDOWN_TO_REAL_TIME
 	bool "Slow down execution to real time"

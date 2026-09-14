@@ -35,10 +35,12 @@ function(toolchain_ld_link_elf)
   )
   add_dependencies(${TOOLCHAIN_LD_LINK_ELF_TARGET_ELF} ${WHOLE_ARCHIVE_LIBS})
   set(macho_whole_archive_libs)
+  set(macho_whole_archive_files)
   foreach(lib ${WHOLE_ARCHIVE_LIBS})
     list(APPEND macho_whole_archive_libs
       ${LINKERFLAGPREFIX},-force_load,$<TARGET_FILE:${lib}>
     )
+    list(APPEND macho_whole_archive_files $<TARGET_FILE:${lib}>)
   endforeach()
 
   get_property(zephyr_std_libs TARGET linker PROPERTY lib_include_dir)
@@ -59,6 +61,7 @@ function(toolchain_ld_link_elf)
   )
   set_property(TARGET ${TOOLCHAIN_LD_LINK_ELF_TARGET_ELF} APPEND PROPERTY
     LINK_DEPENDS
+      ${macho_whole_archive_files}
       ${TOOLCHAIN_LD_LINK_ELF_LINKER_SCRIPT}
       ${ZEPHYR_BASE}/scripts/build/macho_link.py
   )

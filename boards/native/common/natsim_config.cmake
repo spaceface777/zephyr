@@ -25,13 +25,10 @@ endif()
 
 file(GLOB nsi_runner_core_sources CONFIGURE_DEPENDS "${NSI_DIR}/common/src/*.c")
 file(GLOB nsi_runner_native_sources CONFIGURE_DEPENDS "${NSI_DIR}/native/src/*.c")
-if(CONFIG_NATIVE_SIM_EMBEDDED)
-  list(FILTER nsi_runner_core_sources EXCLUDE REGEX "/(nct|nce|nsi_host_trampolines)\\.c$")
-else()
-  list(FILTER nsi_runner_core_sources EXCLUDE REGEX "/(nct_fiber|nce_fiber|nsi_context_if)\\.c$")
-endif()
-string(JOIN " " nsi_runner_core_sources ${nsi_runner_core_sources})
-string(JOIN " " nsi_runner_native_sources ${nsi_runner_native_sources})
+# Applications can replace runner components without patching their sources.
+# Generator expressions permit overrides after find_package(Zephyr).
+set_property(TARGET native_simulator PROPERTY RUNNER_CORE_SOURCES "${nsi_runner_core_sources}")
+set_property(TARGET native_simulator PROPERTY RUNNER_NATIVE_SOURCES "${nsi_runner_native_sources}")
 
 set(nsi_config_content
   ${nsi_config_content}
@@ -51,8 +48,8 @@ set(nsi_config_content
   "NSI_EXTRA_LIBS:=$<JOIN:$<TARGET_PROPERTY:native_simulator,RUNNER_LINK_LIBRARIES>,\ >"
   "NSI_PATH:=${NSI_DIR}/"
   "NSI_N_CPUS:=${CONFIG_NATIVE_SIMULATOR_NUMBER_MCUS}"
-  "NSI_RUNNER_CORE_SRCS:=${nsi_runner_core_sources}"
-  "NSI_RUNNER_NATIVE_SRCS:=${nsi_runner_native_sources}"
+  "NSI_RUNNER_CORE_SRCS:=$<JOIN:$<TARGET_PROPERTY:native_simulator,RUNNER_CORE_SOURCES>,\ >"
+  "NSI_RUNNER_NATIVE_SRCS:=$<JOIN:$<TARGET_PROPERTY:native_simulator,RUNNER_NATIVE_SOURCES>,\ >"
   "NSI_LOCALIZE_OPTIONS:=--localize-symbol=CONFIG_* $<JOIN:$<TARGET_PROPERTY:native_simulator,LOCALIZE_EXTRA_OPTIONS>,\ >"
 )
 

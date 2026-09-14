@@ -50,7 +50,7 @@ def read_symbols(nm, paths):
     return found
 
 
-def registration_options(symbols, order_path):
+def registration_options(symbols, order_path, relocatable=False):
     order = []
     renames = set()
     iterable = {}
@@ -88,10 +88,13 @@ def registration_options(symbols, order_path):
                 output.write(symbol + "\n")
         options.append(f"-Wl,-unexported_symbols_list,{unexported_path}")
 
-    if not order:
+    # ld ignores atom ordering during -r. Keep priority-bearing section names
+    # intact so the final link can still sort them. Equal priorities retain
+    # input order, as SORT_BY_NAME does for identical ELF input section names.
+    if not order or relocatable:
         return options
 
-    order.sort(key=lambda entry: (entry[0], entry[1], entry[2]))
+    order.sort(key=lambda entry: (entry[0], entry[1]))
     with open(order_path, "w", encoding="utf-8") as output:
         for _, _, symbol in order:
             output.write(symbol + "\n")
@@ -121,7 +124,9 @@ def main():
     else:
         order_path = os.path.join(tempfile.gettempdir(), "macho-order.txt")
     symbols = read_symbols(args.nm, input_files(command))
-    options = registration_options(symbols, order_path)
+    relocatable = any(arg == '-r' or (arg.startswith('-Wl,') and '-r' in arg.split(','))
+                      for arg in command)
+    options = registration_options(symbols, order_path, relocatable)
     return subprocess.call([args.cc, *command, *options])
 
 

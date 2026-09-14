@@ -14,11 +14,7 @@
 #include "nsi_timer_model.h"
 #include "nsi_hw_scheduler.h"
 #include "nsi_tasks.h"
-#ifdef QSIM_EMBEDDED_RUNNER
 #include "nsi_host_trampolines.h"
-#define realloc(pointer, size) nsi_host_realloc((pointer), (size))
-#define free(pointer) nsi_host_free(pointer)
-#endif
 
 static int s_argc, test_argc;
 static char **s_argv, **test_argv;
@@ -35,7 +31,7 @@ static int args_aval;
 static void nsi_cleanup_cmd_line(void)
 {
 	if (args_struct != NULL) { /* LCOV_EXCL_BR_LINE */
-		free(args_struct);
+		nsi_host_free(args_struct);
 		args_struct = NULL;
 	}
 }
@@ -64,7 +60,7 @@ void nsi_add_command_line_opts(struct args_struct_t *args)
 			growby = ARGS_ALLOC_CHUNK_SIZE;
 		}
 
-		struct args_struct_t *new_args_struct = realloc(args_struct,
+		struct args_struct_t *new_args_struct = nsi_host_realloc(args_struct,
 				      (args_aval + growby)*
 				      sizeof(struct args_struct_t));
 		args_aval += growby;
@@ -152,7 +148,7 @@ void nsi_register_extra_args(int argc, char *argv[])
 {
 	int new_size = extra_argc + argc;
 
-	extra_argv = realloc(extra_argv, new_size*sizeof(char *));
+	extra_argv = nsi_host_realloc(extra_argv, new_size*sizeof(char *));
 	for (int i = 0; i < argc; i++) {
 		memcpy(&extra_argv[extra_argc], argv, argc*sizeof(char *));
 	}
@@ -161,7 +157,7 @@ void nsi_register_extra_args(int argc, char *argv[])
 
 static void clear_extra_args(void)
 {
-	free(extra_argv);
+	nsi_host_free(extra_argv);
 }
 
 NSI_TASK(clear_extra_args, ON_EXIT_PRE, 100);

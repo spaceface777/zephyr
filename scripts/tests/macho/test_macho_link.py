@@ -56,6 +56,21 @@ def test_registration_options_sort_and_localize(tmp_path):
     assert "-Wl,-rename_section,__ZINIT,__i4_100_0,__ZINIT,__i4" in options
 
 
+def test_partial_link_preserves_priority_section_names(tmp_path):
+    symbols = [('__ZNSIEVT', '__e_999', '_boundary'), ('__ZNSIEVT', '__e_0', '_timer')]
+    order_path = tmp_path / 'partial.txt'
+    assert MACHO_LINK.registration_options(symbols, str(order_path), relocatable=True) == []
+    assert not order_path.exists()
+
+
+def test_equal_priorities_keep_input_order(tmp_path):
+    symbols = [('__ZNSIEVT', '__e_999', '_z'), ('__ZNSIEVT', '__e_999', '_a'),
+               ('__ZNSIEVT', '__e_0', '_timer')]
+    order_path = tmp_path / 'ties.txt'
+    MACHO_LINK.registration_options(symbols, str(order_path))
+    assert order_path.read_text().splitlines() == ['_timer', '_z', '_a']
+
+
 def test_registration_options_without_metadata(tmp_path):
     order_path = tmp_path / "unused.txt"
 

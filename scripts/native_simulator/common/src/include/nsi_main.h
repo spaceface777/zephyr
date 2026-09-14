@@ -26,6 +26,9 @@ extern "C" {
  */
 int nsi_exit_inner(int exit_code);
 
+/* Initialize models and CPUs without changing process signals or streams. */
+void nsi_init(int argc, char *argv[]);
+
 /**
  * @brief Terminate the execution of the native simulator
  *

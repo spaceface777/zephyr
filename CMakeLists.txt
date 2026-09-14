@@ -1467,7 +1467,7 @@ if(CONFIG_USERSPACE OR CONFIG_DEVICE_DEPS)
   target_byproducts(TARGET ${ZEPHYR_LINK_STAGE_EXECUTABLE}
                     BYPRODUCTS ${PROJECT_BINARY_DIR}/${ZEPHYR_LINK_STAGE_EXECUTABLE}.map
   )
-  set_property(TARGET ${ZEPHYR_LINK_STAGE_EXECUTABLE} PROPERTY LINK_DEPENDS ${PROJECT_BINARY_DIR}/${ZEPHYR_CURRENT_LINKER_CMD})
+  set_property(TARGET ${ZEPHYR_LINK_STAGE_EXECUTABLE} APPEND PROPERTY LINK_DEPENDS ${PROJECT_BINARY_DIR}/${ZEPHYR_CURRENT_LINKER_CMD})
   add_dependencies(${ZEPHYR_LINK_STAGE_EXECUTABLE} linker_zephyr_pre${ZEPHYR_CURRENT_LINKER_PASS}_script)
 
   math(EXPR ZEPHYR_CURRENT_LINKER_PASS "1 + ${ZEPHYR_CURRENT_LINKER_PASS}")
@@ -1689,7 +1689,7 @@ target_byproducts(TARGET ${ZEPHYR_LINK_STAGE_EXECUTABLE}
 set(BYPRODUCT_KERNEL_ELF_NAME "${PROJECT_BINARY_DIR}/${KERNEL_ELF_NAME}" CACHE FILEPATH "Kernel elf file" FORCE)
 set_property(TARGET
   ${ZEPHYR_LINK_STAGE_EXECUTABLE}
-  PROPERTY LINK_DEPENDS ${PROJECT_BINARY_DIR}/${ZEPHYR_CURRENT_LINKER_CMD}
+  APPEND PROPERTY LINK_DEPENDS ${PROJECT_BINARY_DIR}/${ZEPHYR_CURRENT_LINKER_CMD}
   )
 add_dependencies(
   ${ZEPHYR_LINK_STAGE_EXECUTABLE}
@@ -1735,7 +1735,7 @@ else()
   )
   target_link_libraries_ifdef(CONFIG_LLEXT_EXPORT_BUILTINS_BY_SLID ${ZEPHYR_FINAL_EXECUTABLE}
                             $<TARGET_PROPERTY:linker,no_check_sections>)
-  set_property(TARGET   ${ZEPHYR_FINAL_EXECUTABLE} PROPERTY LINK_DEPENDS ${PROJECT_BINARY_DIR}/linker.cmd)
+  set_property(TARGET   ${ZEPHYR_FINAL_EXECUTABLE} APPEND PROPERTY LINK_DEPENDS ${PROJECT_BINARY_DIR}/linker.cmd)
   add_dependencies(     ${ZEPHYR_FINAL_EXECUTABLE} linker_zephyr_final_script_target)
 
   # Use the pass2 elf as the final elf
@@ -2090,10 +2090,10 @@ if(CONFIG_BUILD_OUTPUT_EXE)
     set(MAKE "${CMAKE_MAKE_PROGRAM}" CACHE FILEPATH "cmake defined make")
   endif()
   find_program(MAKE make REQUIRED)
-  if(CONFIG_NATIVE_SIM_EMBEDDED)
+  if(CONFIG_NATIVE_SIM_LIBRARY)
     add_custom_target(native_runner_executable
       ALL
-      COMMENT "Building native simulator runner archive for static composition"
+      COMMENT "Building native simulator runner archive"
       COMMAND
       ${MAKE} -f ${ZEPHYR_BASE}/scripts/native_simulator/Makefile runner_lib --warn-undefined-variables
         -r NSI_CONFIG_FILE=${APPLICATION_BINARY_DIR}/zephyr/NSI/nsi_config
@@ -2101,9 +2101,9 @@ if(CONFIG_BUILD_OUTPUT_EXE)
       DEPENDS ${logical_target_for_zephyr_elf}
       BYPRODUCTS ${APPLICATION_BINARY_DIR}/zephyr/NSI/runner.a
     )
-    # Post-build analyzers inspect the canonical prelink in embedded mode.
+    # No executable exists in library mode. Analyzers inspect the prelink.
     set(BYPRODUCT_KERNEL_EXE_NAME "${PROJECT_BINARY_DIR}/${KERNEL_ELF_NAME}"
-        CACHE FILEPATH "Embedded kernel prelink file" FORCE)
+        CACHE FILEPATH "Kernel prelink file" FORCE)
   else()
     add_custom_target(native_runner_executable
       ALL
@@ -2158,7 +2158,11 @@ if(CONFIG_LLEXT)
   endif()
 endif()
 
-if(NOT CMAKE_C_COMPILER_ID STREQUAL "ARMClang" AND NOT LINKER STREQUAL "darwin")
+if(CONFIG_NATIVE_SIM_LIBRARY AND CONFIG_CHECK_INIT_PRIORITIES AND NOT LINKER STREQUAL "darwin")
+  message(WARNING "Init-priority checking requires a final executable; native library output is not checked")
+endif()
+if(NOT CMAKE_C_COMPILER_ID STREQUAL "ARMClang" AND NOT LINKER STREQUAL "darwin"
+   AND NOT CONFIG_NATIVE_SIM_LIBRARY)
   set(check_init_priorities_input
       $<IF:$<TARGET_EXISTS:native_runner_executable>,${BYPRODUCT_KERNEL_EXE_NAME},${BYPRODUCT_KERNEL_ELF_NAME}>
   )

@@ -19,8 +19,6 @@ extern "C" {
 struct nsi_hw_event_st {
 	void (*const callback)(void);
 	uint64_t *timer;
-	unsigned int priority;
-	uint64_t reserved;
 };
 
 /**
@@ -36,18 +34,12 @@ struct nsi_hw_event_st {
  * Priority can be a number between 0 and 999.
  */
 #ifdef __APPLE__
-#ifdef QSIM_EMBEDDED_RUNNER
-#define NSI_MACHO_REGISTRATION_STORAGE __attribute__((visibility("hidden")))
-#else
-#define NSI_MACHO_REGISTRATION_STORAGE static
-#endif
 #define NSI_HW_EVENT(t, fn, prio) \
-	NSI_MACHO_REGISTRATION_STORAGE const struct nsi_hw_event_st NSI_CONCAT(NSI_CONCAT(__nsi_hw_event_, fn), t) \
+	static const struct nsi_hw_event_st NSI_CONCAT(NSI_CONCAT(__nsi_hw_event_, fn), t) \
 		__attribute__((__used__)) NSI_NOASAN \
 		__attribute__((__section__("__ZNSIEVT,__e_" NSI_STRINGIFY(prio)))) = { \
 			.callback = fn, \
 			.timer = &t, \
-			.priority = prio, \
 		}
 #else
 #define NSI_HW_EVENT(t, fn, prio)					\
@@ -57,7 +49,6 @@ struct nsi_hw_event_st {
 		= {			\
 			.callback = fn,	\
 			.timer = &t,	\
-			.priority = prio, \
 		}
 #endif
 

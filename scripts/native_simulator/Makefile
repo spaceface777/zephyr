@@ -98,9 +98,7 @@ no_default:
 RUNNER_LIB:=runner.a
 
 ifeq ($(strip ${NSI_RUNNER_CORE_SRCS}),)
-  # Standalone builds retain the pthread NCT/NCE backend. Embedded builds
-  # provide an explicit source list selecting the fiber implementations.
-  NSI_RUNNER_CORE_SRCS:=$(filter-out %/nct_fiber.c %/nce_fiber.c %/nsi_context_if.c,$(wildcard ${NSI_PATH}common/src/*.c))
+  NSI_RUNNER_CORE_SRCS:=$(wildcard ${NSI_PATH}common/src/*.c)
 endif
 SRCS:=${NSI_RUNNER_CORE_SRCS}
 ifdef NSI_NATIVE
