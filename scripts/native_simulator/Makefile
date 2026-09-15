@@ -40,6 +40,8 @@ NSI_BUILD_OPTIONS?=${NSI_ARCH} ${NSI_COVERAGE}
 NSI_LINK_OPTIONS?=${NSI_ARCH} ${NSI_COVERAGE}
 NSI_BUILD_C_OPTIONS?=
 NSI_BUILD_CXX_OPTIONS?=
+#  NCT execution context backend
+NSI_NCT_BACKEND?=pthread
 #  Extra source files to be built in the runner context
 NSI_EXTRA_SRCS?=
 #  Extra include directories to be used while building in the runner context
@@ -82,7 +84,17 @@ no_default:
 
 RUNNER_LIB:=runner.a
 
-SRCS:=$(shell ls ${NSI_PATH}common/src/*.c)
+COMMON_SRCS:=$(shell ls ${NSI_PATH}common/src/*.c)
+SRCS:=$(filter-out ${NSI_PATH}common/src/nct_pthread.c ${NSI_PATH}common/src/nct_fiber.c,${COMMON_SRCS})
+ASM_SRCS:=
+ifeq (${NSI_NCT_BACKEND},pthread)
+  SRCS+=${NSI_PATH}common/src/nct_pthread.c
+else ifeq (${NSI_NCT_BACKEND},fiber)
+  SRCS+=${NSI_PATH}common/src/nct_fiber.c
+  ASM_SRCS+=${NSI_PATH}common/src/nct_context_x86_64.S
+else
+  $(error Unsupported NSI_NCT_BACKEND '${NSI_NCT_BACKEND}')
+endif
 ifdef NSI_NATIVE
   SRCS+=$(shell ls ${NSI_PATH}native/src/*.c)
 endif
@@ -96,7 +108,8 @@ ifdef NSI_NATIVE
 endif
 
 EXTRA_OBJS:=$(abspath $(addprefix $(NSI_BUILD_PATH)/,$(sort $(patsubst %.c,%.o,${NSI_EXTRA_SRCS:%.cpp=%.c}))))
-OBJS:=$(abspath $(addprefix $(NSI_BUILD_PATH)/,${SRCS:${NSI_PATH}%.c=%.o})) ${EXTRA_OBJS}
+OBJS:=$(abspath $(addprefix $(NSI_BUILD_PATH)/,${SRCS:${NSI_PATH}%.c=%.o})) \
+ $(abspath $(addprefix $(NSI_BUILD_PATH)/,${ASM_SRCS:${NSI_PATH}%.S=%.o})) ${EXTRA_OBJS}
 
 DEPENDFILES:=$(addsuffix .d,$(basename ${OBJS}))
 
@@ -120,6 +133,10 @@ ${NSI_BUILD_PATH}/%.o: /%.cpp ${NSI_PATH}Makefile ${NSI_CONFIG_FILE}
 ${NSI_BUILD_PATH}/%.o: ${NSI_PATH}/%.c ${NSI_PATH}Makefile ${NSI_CONFIG_FILE}
 	@if [ ! -d $(dir $@) ]; then mkdir -p $(dir $@); fi
 	${NSI_CC} ${NSI_CPPFLAGS} ${INCLUDES} ${CFLAGS} -c $< -o $@
+
+${NSI_BUILD_PATH}/%.o: ${NSI_PATH}/%.S ${NSI_PATH}Makefile ${NSI_CONFIG_FILE}
+	@if [ ! -d $(dir $@) ]; then mkdir -p $(dir $@); fi
+	${NSI_CC} ${NSI_CPPFLAGS} ${INCLUDES} ${COMMON_BUILD_FLAGS} -c $< -o $@
 
 ${NSI_BUILD_PATH}/linker_script.ld : ${NSI_PATH}/common/other/linker_script.pre.ld | ${NSI_BUILD_PATH}
 	${NSI_CC} -x c -E -P $< -o $@  ${DEPENDFLAGS}
