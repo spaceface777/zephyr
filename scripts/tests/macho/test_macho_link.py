@@ -3,6 +3,8 @@
 import importlib.util
 from pathlib import Path
 
+import pytest
+
 
 SCRIPT = Path(__file__).parents[2] / "build" / "macho_link.py"
 SPEC = importlib.util.spec_from_file_location("macho_link", SCRIPT)
@@ -69,6 +71,27 @@ def test_equal_priorities_keep_input_order(tmp_path):
     order_path = tmp_path / 'ties.txt'
     MACHO_LINK.registration_options(symbols, str(order_path))
     assert order_path.read_text().splitlines() == ['_timer', '_z', '_a']
+
+
+def test_init_sub_priorities_follow_elf_section_name_order(tmp_path):
+    # ELF sorts .z_init_PRE_KERNEL_1_P_50_SUB_00016_ before .z_init_PRE_KERNEL_1_P_50_SUB_0_, and
+    # _P_5_ before _P_50_ before _P_100_.
+    symbols = [
+        ("__ZINIT", "__i1_50_0", "_sys_init"),
+        ("__ZINIT", "__i1_50_00016", "_device_16"),
+        ("__ZINIT", "__i1_100_0", "_late"),
+        ("__ZINIT", "__i1_5_0", "_early"),
+        ("__ZINIT", "__i1_50_00002", "_device_2"),
+    ]
+    order_path = tmp_path / "init.txt"
+    MACHO_LINK.registration_options(symbols, str(order_path))
+    assert order_path.read_text().splitlines() == ["_early", "_device_2", "_device_16", "_sys_init", "_late"]
+
+
+def test_unrecognized_registration_section_is_rejected(tmp_path):
+    symbols = [("__ZINIT", "__i1_1+1_0", "_computed_priority")]
+    with pytest.raises(ValueError, match="unrecognized registration section __ZINIT,__i1_1\\+1_0"):
+        MACHO_LINK.registration_options(symbols, str(tmp_path / "bad.txt"))
 
 
 def test_registration_options_without_metadata(tmp_path):

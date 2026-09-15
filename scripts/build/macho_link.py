@@ -50,6 +50,20 @@ def read_symbols(nm, paths):
     return found
 
 
+def order_key(segment, match):
+    """The ELF link order of one registration section.
+
+    Init entries follow SORT(.z_init_<level>_P_?_*), then _P_??_* and _P_???_*: priorities by digit count,
+    then by section name, whose remainder is SUB_<sub_priority>_. The trailing underscore makes
+    SUB_00016_ sort before SUB_0_. Native Simulator tasks and hardware events use [0-9], [1-9][0-9] and
+    [1-9][0-9][0-9] globs, which order them numerically.
+    """
+    if segment == "__ZINIT":
+        level, priority, sub_priority = match.groups()
+        return (int(level), len(priority), priority, sub_priority + "_")
+    return tuple(int(value) for value in match.groups())
+
+
 def registration_options(symbols, order_path, relocatable=False):
     order = []
     renames = set()
@@ -70,11 +84,11 @@ def registration_options(symbols, order_path, relocatable=False):
         pattern, output_pattern = REGISTRATION[segment]
         match = pattern.fullmatch(section)
         if not match:
-            continue
-        values = tuple(int(value) for value in match.groups())
-        output_section = output_pattern.format(values[0])
+            # An unordered record would sit outside its range and silently never register.
+            raise ValueError(f"unrecognized registration section {segment},{section} ({symbol})")
+        output_section = output_pattern.format(int(match.group(1)))
         renames.add((segment, section, segment, output_section))
-        order.append((segment, values, symbol))
+        order.append((segment, order_key(segment, match), symbol))
 
     for section, names in iterable.items():
         for symbol in sorted(set(names)):
