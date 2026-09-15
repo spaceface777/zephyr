@@ -23,6 +23,15 @@
 #include "nsi_internal.h"
 #include "nct_context.h"
 
+#if defined(__SANITIZE_ADDRESS__)
+#error "The NCT fiber backend is not compatible with AddressSanitizer yet"
+#endif
+#if defined(__has_feature)
+#if __has_feature(address_sanitizer) || __has_feature(memory_sanitizer)
+#error "The NCT fiber backend is not compatible with stack-tracking sanitizers yet"
+#endif
+#endif
+
 #ifndef NSI_NCT_FIBER_STACK_SIZE
 #define NSI_NCT_FIBER_STACK_SIZE (1024U * 1024U)
 #endif
@@ -174,6 +183,12 @@ void nct_swap_threads(void *this_arg, int next_allowed_thread_nbr)
 {
 	struct nct_status_t *this = this_arg;
 	int current_idx = this->currently_allowed_thread;
+
+	if (current_idx == -1) {
+		nct_first_thread_start(this_arg, next_allowed_thread_nbr);
+		__builtin_unreachable();
+	}
+
 	struct threads_table_el *current = ttable_get_element(this, current_idx);
 	struct threads_table_el *next = ttable_get_element(this, next_allowed_thread_nbr);
 

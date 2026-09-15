@@ -1,6 +1,13 @@
 /* SPDX-License-Identifier: Apache-2.0 */
 #include "nct_context_offsets.h"
 
+#ifndef __x86_64__
+#error "NCT userspace contexts currently require x86-64"
+#endif
+#if defined(__CET__) && (__CET__ & 2)
+#error "NCT userspace contexts do not support CET shadow stacks"
+#endif
+
 	.text
 	.globl nct_context_switch
 	.type nct_context_switch,@function
@@ -29,6 +36,11 @@ nct_context_switch:
 	movq NCT_CTX_RIP(%rsi), %rax
 	jmp *%rax
 .Lresume:
+#ifdef __CET__
+#if (__CET__ & 1)
+	endbr64
+#endif
+#endif
 	ret
 	.size nct_context_switch, .-nct_context_switch
 
