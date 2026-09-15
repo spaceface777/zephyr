@@ -68,6 +68,16 @@ config NATIVE_SIMULATOR_NCT_FIBER
 	  AddressSanitizer or MemorySanitizer automatically fall back to the pthread
 	  backend until sanitizer fiber-switch hooks are integrated.
 
+	  All Zephyr threads within an NCT instance share one host pthread when this
+	  backend is active. Host pthread identity and pthread/thread-local storage
+	  are therefore shared between Zephyr threads; NCT preserves host errno per
+	  Zephyr thread, but cannot virtualize arbitrary host TLS. Use the default
+	  pthread backend when code relies on distinct host pthread identities or
+	  host-library TLS state.
+
+	  Intel CET indirect-branch tracking is supported. CET shadow stacks are not
+	  yet supported by the userspace context switch implementation.
+
 config NATIVE_SIMULATOR_NCT_FIBER_STACK_SIZE
 	int "Native Simulator userspace context host stack size"
 	depends on NATIVE_SIMULATOR_NCT_FIBER
