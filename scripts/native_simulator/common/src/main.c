@@ -45,13 +45,12 @@ int nsi_exit_inner(int exit_code)
 }
 
 /**
- * Run all early native simulator initialization steps, including command
- * line parsing and CPU start, until we are ready to let the HW models
- * run via nsi_hws_one_event()
- *
- * Note: This API should normally only be called by the native simulator main()
+ * Run the native simulator initialization steps that precede CPU boot:
+ * PRE_BOOT_1 tasks, command line parsing, PRE_BOOT_2 tasks, HW_INIT tasks,
+ * hardware scheduler initialization, and PRE_BOOT_3 tasks.
+ * No CPU code runs.
  */
-void nsi_init(int argc, char *argv[])
+void nsi_init_until_boot(int argc, char *argv[])
 {
 	nsi_run_tasks(NSITASK_PRE_BOOT_1_LEVEL);
 	for (int i = 0; i < NSI_N_CPUS; i++) {
@@ -69,10 +68,30 @@ void nsi_init(int argc, char *argv[])
 	nsi_hws_init();
 
 	nsi_run_tasks(NSITASK_PRE_BOOT_3_LEVEL);
+}
 
+/**
+ * Boot the CPUs configured to auto-boot, then run FIRST_SLEEP tasks.
+ * Call once, after nsi_init_until_boot().
+ */
+void nsi_boot(void)
+{
 	nsi_cpu_auto_boot();
 
 	nsi_run_tasks(NSITASK_FIRST_SLEEP_LEVEL);
+}
+
+/**
+ * Run all early native simulator initialization steps, including command
+ * line parsing and CPU start, until we are ready to let the HW models
+ * run via nsi_hws_one_event()
+ *
+ * Note: This API should normally only be called by the native simulator main()
+ */
+void nsi_init(int argc, char *argv[])
+{
+	nsi_init_until_boot(argc, argv);
+	nsi_boot();
 }
 
 /**

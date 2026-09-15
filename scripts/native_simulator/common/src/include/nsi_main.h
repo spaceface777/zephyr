@@ -29,6 +29,10 @@ int nsi_exit_inner(int exit_code);
 /* Initialize models and CPUs without changing process signals or streams. */
 void nsi_init(int argc, char *argv[]);
 
+/* The two halves of nsi_init(): everything before CPU boot, then CPU boot and FIRST_SLEEP tasks. */
+void nsi_init_until_boot(int argc, char *argv[]);
+void nsi_boot(void);
+
 /**
  * @brief Terminate the execution of the native simulator
  *

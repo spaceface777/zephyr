@@ -27,6 +27,8 @@ extern "C" {
  */
 
 void nsi_init(int argc, char *argv[]);
+void nsi_init_until_boot(int argc, char *argv[]);
+void nsi_boot(void);
 void nsi_exec_for(uint64_t us);
 
 #ifdef __cplusplus
