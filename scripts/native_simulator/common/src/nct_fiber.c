@@ -67,10 +67,43 @@ struct nct_status_t {
 	int currently_allowed_thread;
 	struct nct_context root_context;
 	int root_errno;
+	void *deferred_stack_mapping;
+	size_t deferred_stack_mapping_size;
 	bool terminate;
 };
 
 static struct threads_table_el *ttable_get_element(struct nct_status_t *this, int index);
+
+static void nct_reap_deferred_stack(struct nct_status_t *this)
+{
+	if (this->deferred_stack_mapping == NULL) {
+		return;
+	}
+
+	if (munmap(this->deferred_stack_mapping, this->deferred_stack_mapping_size) != 0) {
+		nsi_print_error_and_exit("NCT fiber: deferred stack munmap failed: %s\n",
+				 strerror(errno));
+	}
+
+	this->deferred_stack_mapping = NULL;
+	this->deferred_stack_mapping_size = 0;
+}
+
+static void nct_release_stack(struct threads_table_el *tt_el)
+{
+	if (tt_el->stack_mapping == NULL) {
+		return;
+	}
+
+	if (munmap(tt_el->stack_mapping, tt_el->stack_mapping_size) != 0) {
+		nsi_print_error_and_exit("NCT fiber: stack munmap failed: %s\n", strerror(errno));
+	}
+
+	tt_el->stack_mapping = NULL;
+	tt_el->stack_mapping_size = 0;
+	tt_el->stack_addr = NULL;
+	tt_el->stack_size = 0;
+}
 
 static void ttable_init_elements(struct threads_table_el *chunk, int size)
 {
@@ -132,6 +165,10 @@ static void nct_fiber_start(void *arg)
 		nsi_print_error_and_exit("NCT fiber: entered a terminated thread\n");
 	}
 
+	/* A freshly-started context may be the first safe place to release the
+	 * stack of a thread which aborted itself immediately before switching here.
+	 */
+	nct_reap_deferred_stack(this);
 	tt_el->running = true;
 	this->fptr(tt_el->payload);
 	tt_el->running = false;
@@ -204,6 +241,15 @@ void nct_swap_threads(void *this_arg, int next_allowed_thread_nbr)
 	current->running = false;
 	if (current->state == ABORTING) {
 		current->state = ABORTED;
+		if (this->deferred_stack_mapping != NULL) {
+			nsi_print_error_and_exit("NCT fiber: deferred stack was not reaped\n");
+		}
+		this->deferred_stack_mapping = current->stack_mapping;
+		this->deferred_stack_mapping_size = current->stack_mapping_size;
+		current->stack_mapping = NULL;
+		current->stack_mapping_size = 0;
+		current->stack_addr = NULL;
+		current->stack_size = 0;
 	}
 
 	current->saved_errno = errno;
@@ -214,6 +260,7 @@ void nct_swap_threads(void *this_arg, int next_allowed_thread_nbr)
 	nct_context_switch(&current->context, &next->context);
 
 	/* The context resumed here after some later switch selected it again. */
+	nct_reap_deferred_stack(this);
 	current->running = true;
 }
 
@@ -311,6 +358,7 @@ void nct_abort_thread(void *this_arg, int thread_idx)
 	} else {
 		tt_el->state = ABORTED;
 		tt_el->running = false;
+		nct_release_stack(tt_el);
 	}
 }
 
