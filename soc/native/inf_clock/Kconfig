@@ -55,4 +55,27 @@ config NATIVE_SIMULATOR_STATIC_LINKING
 
 	  Static linking depends on all required libraries being available as static libraries.
 
+config NATIVE_SIMULATOR_NCT_FIBER
+	bool "Use fast userspace Native Simulator context switching"
+	depends on 64BIT
+	help
+	  Use an experimental userspace execution-context backend for Native
+	  Simulator Zephyr threads instead of mapping each Zephyr thread to a host
+	  pthread. This avoids host scheduler and semaphore activity on each Zephyr
+	  context switch.
+
+	  The backend currently supports 64-bit x86 Linux hosts only. Builds using
+	  AddressSanitizer or MemorySanitizer automatically fall back to the pthread
+	  backend until sanitizer fiber-switch hooks are integrated.
+
+config NATIVE_SIMULATOR_NCT_FIBER_STACK_SIZE
+	int "Native Simulator userspace context host stack size"
+	depends on NATIVE_SIMULATOR_NCT_FIBER
+	range 65536 16777216
+	default 1048576
+	help
+	  Size in bytes of the host stack mapped for each Zephyr thread when the
+	  userspace context backend is active. A guard page is mapped below each
+	  stack in addition to this size.
+
 endif # SOC_POSIX

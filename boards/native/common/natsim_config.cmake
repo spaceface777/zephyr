@@ -16,6 +16,20 @@ if(CONFIG_NATIVE_SIMULATOR_STATIC_LINKING)
   target_link_options(native_simulator INTERFACE "-static")
 endif()
 
+set(nsi_nct_backend pthread)
+set(nsi_nct_build_c_options "")
+if(CONFIG_NATIVE_SIMULATOR_NCT_FIBER)
+  if(NOT "${TARGET_HOST}" STREQUAL "x86_64" OR NOT CONFIG_64BIT)
+    message(STATUS "Native Simulator fiber NCT backend requested but unavailable on this host; using pthread")
+  elseif(CONFIG_ASAN OR CONFIG_MSAN)
+    message(STATUS "Native Simulator fiber NCT backend disabled for ASan/MSan; using pthread")
+  else()
+    set(nsi_nct_backend fiber)
+    set(nsi_nct_build_c_options
+      "-DNSI_NCT_FIBER_STACK_SIZE=${CONFIG_NATIVE_SIMULATOR_NCT_FIBER_STACK_SIZE}")
+  endif()
+endif()
+
 list(JOIN CMAKE_C_COMPILER_LAUNCHER " " launcher)
 
 if("${LINKER}" STREQUAL "lld")
@@ -26,6 +40,7 @@ set(nsi_config_content
   ${nsi_config_content}
   "NSI_AR:=${CMAKE_AR}"
   "NSI_BUILD_OPTIONS:=$<JOIN:$<TARGET_PROPERTY:native_simulator,INTERFACE_COMPILE_OPTIONS>,\ >"
+  "NSI_BUILD_C_OPTIONS:=${nsi_nct_build_c_options}"
   "NSI_BUILD_PATH:=${zephyr_build_path}/NSI"
   "NSI_CC:=$<$<BOOL:${launcher}>:${launcher} >${CMAKE_C_COMPILER}"
   "NSI_OBJCOPY:=${CMAKE_OBJCOPY}"
@@ -34,6 +49,7 @@ set(nsi_config_content
   "NSI_EXTRA_SRCS:=$<JOIN:$<TARGET_PROPERTY:native_simulator,INTERFACE_SOURCES>,\ >"
   "NSI_LINK_OPTIONS:=$<JOIN:$<TARGET_PROPERTY:native_simulator,INTERFACE_LINK_OPTIONS>,\ >"
   "NSI_EXTRA_LIBS:=$<JOIN:$<TARGET_PROPERTY:native_simulator,RUNNER_LINK_LIBRARIES>,\ >"
+  "NSI_NCT_BACKEND:=${nsi_nct_backend}"
   "NSI_PATH:=${NSI_DIR}/"
   "NSI_N_CPUS:=${CONFIG_NATIVE_SIMULATOR_NUMBER_MCUS}"
   "NSI_LOCALIZE_OPTIONS:=--localize-symbol=CONFIG_* $<JOIN:$<TARGET_PROPERTY:native_simulator,LOCALIZE_EXTRA_OPTIONS>,\ >"
