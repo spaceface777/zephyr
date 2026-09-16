@@ -77,6 +77,7 @@ config NATIVE_SIMULATOR_BACKEND_PTHREADS
 config NATIVE_SIMULATOR_BACKEND_COROUTINES
 	bool "Stackful coroutines"
 	depends on !SMP
+	depends on 64BIT
 	help
 	  Each embedded thread runs as a stackful coroutine, on the same host
 	  thread which runs the HW models. Switching is a userspace register save
@@ -87,8 +88,9 @@ config NATIVE_SIMULATOR_BACKEND_COROUTINES
 	  context switch, and it keeps the whole simulation in one host thread,
 	  which an embedding program can drive directly.
 
-	  This needs host architecture support. It is implemented for x86-64 and
-	  AArch64 hosts. Selecting it for any other host fails during the build.
+	  This needs host architecture support. It is implemented for 64 bit
+	  x86-64 and AArch64 hosts. It is not offered for a 32 bit build, and on
+	  any other host the build stops with an explicit error.
 
 endchoice
 

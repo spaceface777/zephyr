@@ -33,6 +33,28 @@
 #include "nsi_tracing.h"
 
 /*
+ * A sanitized build has to be told where each stack is, because the switch
+ * below is not one the sanitizer can see. Left unsaid, AddressSanitizer
+ * measures from the host stack down to a coroutine stack, decides the bounds
+ * it computed are not credible, stops honouring __asan_handle_no_return, and
+ * says that false positive reports may follow.
+ */
+#if defined(__SANITIZE_ADDRESS__)
+#define NSI_CONTEXT_ASAN 1
+#elif defined(__has_feature)
+#if __has_feature(address_sanitizer)
+#define NSI_CONTEXT_ASAN 1
+#endif
+#endif
+
+#ifdef NSI_CONTEXT_ASAN
+/* Declared here so that building this does not need a sanitizer header. */
+void __sanitizer_start_switch_fiber(void **fake_stack_save, const void *bottom, size_t size);
+void __sanitizer_finish_switch_fiber(void *fake_stack_save, const void **bottom_old,
+				     size_t *size_old);
+#endif
+
+/*
  * A handle is a process wide creation serial above a slot field. The slot
  * field makes resolving a handle one indexed comparison, while the serial
  * keeps handles from repeating when a slot is reused, so that a stale handle
@@ -74,6 +96,11 @@ struct host_ctx {
 	struct host_ctx *return_to;
 	int saved_errno;
 	fenv_t floating_point;
+#ifdef NSI_CONTEXT_ASAN
+	void *asan_fake_stack;
+	const void *asan_stack_bottom;
+	size_t asan_stack_size;
+#endif
 };
 
 static struct {
@@ -91,6 +118,38 @@ static struct {
 	uint64_t operation_owner;
 	uint64_t next_serial;
 } host;
+
+#ifdef NSI_CONTEXT_ASAN
+static void asan_before_switch(struct host_ctx *from, const struct host_ctx *to, bool for_good)
+{
+	/*
+	 * A context which will not run again passes no place to save its fake
+	 * stack, which is how the sanitizer is told to release it.
+	 */
+	__sanitizer_start_switch_fiber(for_good ? NULL : &from->asan_fake_stack,
+				       to->asan_stack_bottom, to->asan_stack_size);
+}
+
+static void asan_after_switch(struct host_ctx *self, struct host_ctx *previous)
+{
+	const void *bottom = NULL;
+	size_t size = 0;
+
+	__sanitizer_finish_switch_fiber(self->asan_fake_stack, &bottom, &size);
+	/*
+	 * What comes back describes whoever ran before us. That is how the root
+	 * learns the bounds of the host stack it was already running on, which
+	 * it has no other way to know.
+	 */
+	if (previous != NULL && previous->asan_stack_bottom == NULL) {
+		previous->asan_stack_bottom = bottom;
+		previous->asan_stack_size = size;
+	}
+}
+#else
+#define asan_before_switch(from, to, for_good) ((void)0)
+#define asan_after_switch(self, previous) ((void)0)
+#endif
 
 static nsi_context_t new_handle(nsi_context_t slot_field)
 {
@@ -155,6 +214,7 @@ static void accept_transfer(struct nsi_coro_transfer transfer)
 		nsi_print_error_and_exit("Context switched in from nowhere\n");
 	}
 	previous->continuation = transfer.from;
+	asan_after_switch(host.current, previous);
 	host.current->state = CTX_RUNNING;
 	restore(host.current);
 }
@@ -170,6 +230,7 @@ static void entry_returned(struct host_ctx *context)
 	}
 	destination->state = CTX_RUNNING;
 	host.current = destination;
+	asan_before_switch(context, destination, true);
 	(void)nsi_coro_switch(destination->continuation, context);
 	nsi_print_error_and_exit("A finished context was resumed\n");
 }
@@ -209,6 +270,7 @@ static nsi_context_status_t do_transfer(struct host_ctx *from, struct host_ctx *
 	to->state = CTX_RUNNING;
 	to->return_to = from;
 	host.current = to;
+	asan_before_switch(from, to, abandon);
 
 	struct nsi_coro_transfer result = nsi_coro_switch(to->continuation, from);
 
@@ -322,6 +384,10 @@ static nsi_context_status_t create(void *user, uint64_t owner, nsi_context_role_
 	context->stack = stack;
 	context->entry = entry;
 	context->argument = argument;
+#ifdef NSI_CONTEXT_ASAN
+	context->asan_stack_bottom = stack->usable_begin;
+	context->asan_stack_size = stack->usable_size;
+#endif
 	context->saved_errno = errno;
 	if (fegetenv(&context->floating_point) != 0) {
 		free(context);
