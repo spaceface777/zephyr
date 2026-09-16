@@ -99,10 +99,9 @@ SYM(nsi_coro_create):
 #endif
 
 /*
- * struct nsi_coro_transfer nsi_coro_switch(nsi_coro_t target, void *argument)
+ * nsi_coro_t nsi_coro_switch(nsi_coro_t target)
  *
- * x0 target, x1 argument. Returns x0 = from, x1 = argument, which is how
- * AAPCS64 returns a two pointer structure.
+ * x0 target. Returns x0 = the continuation of whoever switches back.
  */
 .balign 16
 .globl SYM(nsi_coro_switch)
@@ -121,10 +120,9 @@ SYM(nsi_coro_switch):
 	stp	x27, x28, [sp, #0x80]
 	stp	x29, x30, [sp, #0x90]
 
-	mov	x2, sp				/* our continuation */
+	mov	x2, sp				/* our continuation, and the result */
 	mov	sp, x0				/* onto the target stack */
-	mov	x0, x2				/* transfer.from */
-						/* x1 is already transfer.argument */
+	mov	x0, x2
 
 	ldp	d8,  d9,  [sp, #0x00]
 	ldp	d10, d11, [sp, #0x10]
@@ -145,8 +143,9 @@ SYM(nsi_coro_switch):
 /*
  * First entry of a new coroutine, reached by the ret of nsi_coro_switch.
  *
- * x0 and x1 already hold the transfer, which is how AAPCS64 passes a two
- * pointer structure by value. x19 holds the entry function.
+ * x0 already holds the continuation of whoever switched here, which is where
+ * AAPCS64 passes the entry function's only argument, so no register has to be
+ * moved. x19 holds the entry function.
  */
 .balign 16
 #if !defined(__APPLE__)

@@ -58,9 +58,9 @@ SYM(nsi_coro_create):
 	jb	1f
 
 	/*
-	 * Align the top down to 16 bytes, then reserve the frame. The return
-	 * address slot ends up 8 below a 16 byte boundary, so the trampoline
-	 * starts with the alignment an ordinary call would have produced.
+	 * Align the top down to 16 bytes, then reserve the frame. The restore
+	 * pops 48 bytes and the ret pops 8, so the trampoline starts on the
+	 * aligned top, which is the alignment this ABI requires at a call.
 	 */
 	andq	$-16, %rdi
 	subq	$56, %rdi
@@ -85,10 +85,9 @@ SYM(nsi_coro_create):
 #endif
 
 /*
- * struct nsi_coro_transfer nsi_coro_switch(nsi_coro_t target, void *argument)
+ * nsi_coro_t nsi_coro_switch(nsi_coro_t target)
  *
- * rdi target, rsi argument. Returns rax = from, rdx = argument, which is how
- * the ABI returns a two pointer structure.
+ * rdi target. Returns rax = the continuation of whoever switches back.
  */
 .balign 16
 .globl SYM(nsi_coro_switch)
@@ -104,10 +103,8 @@ SYM(nsi_coro_switch):
 	pushq	%r14
 	pushq	%r15
 
-	movq	%rsp, %rax			/* our continuation */
+	movq	%rsp, %rax			/* our continuation, and the result */
 	movq	%rdi, %rsp			/* onto the target stack */
-	movq	%rsi, %rdx			/* transfer.argument */
-						/* rax is already transfer.from */
 
 	popq	%r15
 	popq	%r14
@@ -123,8 +120,8 @@ SYM(nsi_coro_switch):
 /*
  * First entry of a new coroutine, reached by the ret of nsi_coro_switch.
  *
- * rax and rdx hold the transfer; rbx holds the entry function. The ABI passes
- * a two pointer structure by value in rdi and rsi.
+ * rax holds the continuation of whoever switched here, and rbx holds the entry
+ * function, which takes that one pointer in rdi.
  */
 .balign 16
 #if !defined(__APPLE__)
@@ -133,7 +130,6 @@ SYM(nsi_coro_switch):
 SYM(nsi_coro_trampoline):
 	endbr64
 	movq	%rax, %rdi
-	movq	%rdx, %rsi
 	call	*%rbx
 	call	SYM(nsi_coro_entry_returned)
 	ud2

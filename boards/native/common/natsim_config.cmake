@@ -38,22 +38,23 @@ set(nsi_coroutine_backend_sources
 if(CONFIG_NATIVE_SIMULATOR_BACKEND_COROUTINES)
   list(FILTER nsi_runner_core_sources EXCLUDE REGEX "/(nct|nce)\\.c$")
   get_target_property(nsi_target_host native_simulator NSI_TARGET_HOST)
-  # NSI_TARGET_HOST names the host CPU, not the word size this build targets.
-  # A 32 bit build on an x86-64 host still reports x86_64, and giving it the
-  # 64 bit switch code would assemble the wrong ABI.
-  if(NOT CONFIG_64BIT)
-    message(FATAL_ERROR
-      "The native simulator coroutine backend is implemented for 64 bit builds "
-      "only. Select CONFIG_NATIVE_SIMULATOR_BACKEND_PTHREADS for this target.")
-  elseif(nsi_target_host STREQUAL "x86_64")
-    list(APPEND nsi_runner_core_sources "${NSI_DIR}/common/src/nsi_coro_x86_64.S")
-  elseif(nsi_target_host STREQUAL "aarch64")
+  # NSI_TARGET_HOST names the host CPU, not the word size this build targets:
+  # a 32 bit build on an x86-64 host still reports x86_64, so the word size has
+  # to be part of the choice. The two x86 ABIs differ in how a switch returns
+  # its result, so they need separate implementations.
+  if(nsi_target_host STREQUAL "x86_64")
+    if(CONFIG_64BIT)
+      list(APPEND nsi_runner_core_sources "${NSI_DIR}/common/src/nsi_coro_x86_64.S")
+    else()
+      list(APPEND nsi_runner_core_sources "${NSI_DIR}/common/src/nsi_coro_i386.S")
+    endif()
+  elseif(nsi_target_host STREQUAL "aarch64" AND CONFIG_64BIT)
     list(APPEND nsi_runner_core_sources "${NSI_DIR}/common/src/nsi_coro_aarch64.S")
   else()
     message(FATAL_ERROR
       "The native simulator coroutine backend has no context switch "
-      "implementation for '${nsi_target_host}'. Select "
-      "CONFIG_NATIVE_SIMULATOR_BACKEND_PTHREADS for this host.")
+      "implementation for '${nsi_target_host}' at this word size. Select "
+      "CONFIG_NATIVE_SIMULATOR_BACKEND_PTHREADS for this target.")
   endif()
 else()
   list(REMOVE_ITEM nsi_runner_core_sources ${nsi_coroutine_backend_sources})

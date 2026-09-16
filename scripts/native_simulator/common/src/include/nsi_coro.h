@@ -22,10 +22,19 @@ extern "C" {
  * target. Nothing is scheduled, queued, or preempted: control goes exactly
  * where the caller says, and comes back only when somebody switches back.
  *
- * What a switch preserves is deliberately limited to what the host C ABI
- * requires a function call to preserve. Everything else which must survive a
- * switch, such as errno, the floating point environment, and the sanitizer
+ * A switch carries one value: the caller receives the continuation of whoever
+ * switched back to it. That is the one thing which cannot be passed any other
+ * way, because it only comes into existence during the switch itself.
+ * Everything else which has to cross a switch, including which coroutine did
+ * the switching, errno, the floating point environment, and the sanitizer
  * bookkeeping, belongs to the layer above and is handled in C.
+ *
+ * Returning a single pointer is deliberate. Every ABI this supports returns one
+ * in a register, which keeps each port to a save, a stack pointer move, and a
+ * restore. A second return value would be returned in memory through a hidden
+ * pointer on 32 bit x86, which would put a store through a pointer owned by the
+ * coroutine being resumed in the middle of the switch, and would oblige every
+ * saved frame to carry that pointer.
  *
  * Only the coroutine which is running may switch away, and a coroutine may
  * not switch to itself. A coroutine must never return from its entry function;
@@ -36,22 +45,14 @@ extern "C" {
 typedef void *nsi_coro_t;
 
 /*
- * The result of a switch, and the argument of a coroutine entry function.
+ * Entry function of a coroutine.
  *
- * `from` is the continuation of the coroutine which switched to us. It is the
- * only way to get back there, and it becomes stale as soon as that coroutine
- * is resumed by anybody.
+ * `from` is the continuation of the coroutine which performed the first switch
+ * into this one. It is the only way to get back there, and it becomes stale as
+ * soon as that coroutine is resumed by anybody. The entry function must not
+ * return.
  */
-struct nsi_coro_transfer {
-	nsi_coro_t from;
-	void *argument;
-};
-
-/*
- * Entry function of a coroutine. It receives the transfer which first entered
- * it, and it must not return.
- */
-typedef void (*nsi_coro_entry_f)(struct nsi_coro_transfer transfer);
+typedef void (*nsi_coro_entry_f)(nsi_coro_t from);
 
 /**
  * Prepare `stack_top` so that the first switch to the returned continuation
@@ -67,13 +68,13 @@ typedef void (*nsi_coro_entry_f)(struct nsi_coro_transfer transfer);
 nsi_coro_t nsi_coro_create(void *stack_top, size_t stack_size, nsi_coro_entry_f entry);
 
 /**
- * Switch to `target`, passing `argument`.
+ * Switch to `target`.
  *
- * Returns once somebody switches back, reporting which coroutine did so and
- * what it passed. The continuation handed to `target` replaces the one the
+ * Returns once somebody switches back, reporting the continuation of whichever
+ * coroutine did so. The continuation handed to `target` replaces the one the
  * caller used, so a continuation is good for one resume only.
  */
-struct nsi_coro_transfer nsi_coro_switch(nsi_coro_t target, void *argument);
+nsi_coro_t nsi_coro_switch(nsi_coro_t target);
 
 /*
  * Called if a coroutine entry function returns, which is a programming error.

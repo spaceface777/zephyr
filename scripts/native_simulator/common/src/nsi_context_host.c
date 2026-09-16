@@ -93,7 +93,16 @@ struct host_ctx {
 	struct host_stack *stack;
 	nsi_context_entry_fn entry;
 	void *argument;
+	/*
+	 * return_to is where this context goes when its entry function returns.
+	 * resumed_by is whoever switched into it last, which it needs in order
+	 * to record their new continuation. They are not the same thing: a
+	 * context which is finishing sets resumed_by on its destination but
+	 * must leave return_to alone, or that destination would later try to
+	 * return into a context which no longer exists.
+	 */
 	struct host_ctx *return_to;
+	struct host_ctx *resumed_by;
 	int saved_errno;
 	fenv_t floating_point;
 #ifdef NSI_CONTEXT_ASAN
@@ -206,17 +215,19 @@ static bool stack_in_use(const struct host_stack *stack)
 	return false;
 }
 
-static void accept_transfer(struct nsi_coro_transfer transfer)
+static void accept_transfer(nsi_coro_t from)
 {
-	struct host_ctx *previous = transfer.argument;
+	struct host_ctx *self = host.current;
+	struct host_ctx *previous;
 
-	if (previous == NULL || host.current == NULL) {
+	if (self == NULL || self->resumed_by == NULL) {
 		nsi_print_error_and_exit("Context switched in from nowhere\n");
 	}
-	previous->continuation = transfer.from;
-	asan_after_switch(host.current, previous);
-	host.current->state = CTX_RUNNING;
-	restore(host.current);
+	previous = self->resumed_by;
+	previous->continuation = from;
+	asan_after_switch(self, previous);
+	self->state = CTX_RUNNING;
+	restore(self);
 }
 
 static void entry_returned(struct host_ctx *context)
@@ -229,15 +240,17 @@ static void entry_returned(struct host_ctx *context)
 		nsi_print_error_and_exit("A context finished with nowhere to return to\n");
 	}
 	destination->state = CTX_RUNNING;
+	/* Deliberately not return_to: see the note on those two fields. */
+	destination->resumed_by = context;
 	host.current = destination;
 	asan_before_switch(context, destination, true);
-	(void)nsi_coro_switch(destination->continuation, context);
+	(void)nsi_coro_switch(destination->continuation);
 	nsi_print_error_and_exit("A finished context was resumed\n");
 }
 
-static void context_entry(struct nsi_coro_transfer transfer)
+static void context_entry(nsi_coro_t from)
 {
-	accept_transfer(transfer);
+	accept_transfer(from);
 
 	struct host_ctx *self = host.current;
 
@@ -269,10 +282,11 @@ static nsi_context_status_t do_transfer(struct host_ctx *from, struct host_ctx *
 	from->state = abandon ? CTX_ABANDONED : CTX_RUNNABLE;
 	to->state = CTX_RUNNING;
 	to->return_to = from;
+	to->resumed_by = from;
 	host.current = to;
 	asan_before_switch(from, to, abandon);
 
-	struct nsi_coro_transfer result = nsi_coro_switch(to->continuation, from);
+	nsi_coro_t result = nsi_coro_switch(to->continuation);
 
 	if (abandon) {
 		nsi_print_error_and_exit("An abandoned context was resumed\n");
