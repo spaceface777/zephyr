@@ -27,6 +27,9 @@ extern "C" {
  * nct_new_thread() returned, and are never reused.
  */
 
+/* Return the NCT instance for a read-only embedded debugger adapter. */
+void *nct_coro_debug_instance(void);
+
 /* Number of threads ever created, which is also one past the highest index. */
 int nct_coro_debug_thread_count(void *this_arg);
 

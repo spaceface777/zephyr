@@ -64,6 +64,8 @@ struct nct_status {
 	bool terminating;
 };
 
+static struct nct_status *debug_instance;
+
 static struct nct_thread *get_thread(struct nct_status *status, int index)
 {
 	if (status == NULL || index < 0 || (size_t)index >= status->capacity) {
@@ -150,6 +152,7 @@ void *nct_init(void (*entry)(void *))
 		free(status);
 		return NULL;
 	}
+	debug_instance = status;
 	return status;
 }
 
@@ -304,7 +307,15 @@ void nct_clean_up(void *this_arg)
 		status->threads[index] = NULL;
 	}
 	free(status->threads);
+	if (debug_instance == status) {
+		debug_instance = NULL;
+	}
 	free(status);
+}
+
+void *nct_coro_debug_instance(void)
+{
+	return debug_instance;
 }
 
 /*

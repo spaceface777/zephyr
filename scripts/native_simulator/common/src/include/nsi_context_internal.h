@@ -70,6 +70,13 @@ nsi_context_t nsi_context_owner(void);
 
 int nsi_context_is_bound(void);
 
+/*
+ * Return the saved coroutine continuation for a suspended context owned by
+ * the default service. This is read-only debugger support, not a context
+ * operation. Active, destroyed, and foreign contexts return NULL.
+ */
+void *nsi_context_default_debug_continuation(nsi_context_t context);
+
 #ifdef __cplusplus
 }
 #endif

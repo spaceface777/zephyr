@@ -205,6 +205,13 @@ static struct host_ctx *resolve(nsi_context_t handle)
 	return (context != NULL && context->handle == handle) ? context : NULL;
 }
 
+void *nsi_context_default_debug_continuation(nsi_context_t handle)
+{
+	struct host_ctx *context = resolve(handle);
+
+	return context != NULL && context->state == CTX_RUNNABLE ? context->continuation : NULL;
+}
+
 static bool stack_in_use(const struct host_stack *stack)
 {
 	for (size_t i = 0; i < host.capacity; i++) {
