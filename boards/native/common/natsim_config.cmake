@@ -25,6 +25,33 @@ endif()
 
 file(GLOB nsi_runner_core_sources CONFIGURE_DEPENDS "${NSI_DIR}/common/src/*.c")
 file(GLOB nsi_runner_native_sources CONFIGURE_DEPENDS "${NSI_DIR}/native/src/*.c")
+
+# The two CPU threading backends define the same entry points, so exactly one
+# of them is built. Host threads are the default, and leave this build as it
+# has always been.
+set(nsi_coroutine_backend_sources
+  "${NSI_DIR}/common/src/nct_coro.c"
+  "${NSI_DIR}/common/src/nce_coro.c"
+  "${NSI_DIR}/common/src/nsi_context_if.c"
+  "${NSI_DIR}/common/src/nsi_context_host.c"
+)
+if(CONFIG_NATIVE_SIMULATOR_BACKEND_COROUTINES)
+  list(FILTER nsi_runner_core_sources EXCLUDE REGEX "/(nct|nce)\\.c$")
+  get_target_property(nsi_target_host native_simulator NSI_TARGET_HOST)
+  if(nsi_target_host STREQUAL "x86_64")
+    list(APPEND nsi_runner_core_sources "${NSI_DIR}/common/src/nsi_coro_x86_64.S")
+  elseif(nsi_target_host STREQUAL "aarch64")
+    list(APPEND nsi_runner_core_sources "${NSI_DIR}/common/src/nsi_coro_aarch64.S")
+  else()
+    message(FATAL_ERROR
+      "The native simulator coroutine backend has no context switch "
+      "implementation for '${nsi_target_host}'. Select "
+      "CONFIG_NATIVE_SIMULATOR_BACKEND_PTHREADS for this host.")
+  endif()
+else()
+  list(REMOVE_ITEM nsi_runner_core_sources ${nsi_coroutine_backend_sources})
+endif()
+
 # Applications can replace runner components without patching their sources.
 # Generator expressions permit overrides after find_package(Zephyr).
 set_property(TARGET native_simulator PROPERTY RUNNER_CORE_SOURCES "${nsi_runner_core_sources}")

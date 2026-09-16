@@ -55,4 +55,41 @@ config NATIVE_SIMULATOR_STATIC_LINKING
 
 	  Static linking depends on all required libraries being available as static libraries.
 
+choice NATIVE_SIMULATOR_BACKEND
+	prompt "Embedded CPU threading backend"
+	default NATIVE_SIMULATOR_BACKEND_PTHREADS
+	help
+	  How the native simulator gives each embedded thread its own execution
+	  context, and how it switches between them.
+
+	  This selects an implementation only. The embedded code, its scheduling
+	  decisions, and the order in which its threads run are the same either way.
+
+config NATIVE_SIMULATOR_BACKEND_PTHREADS
+	bool "Host threads"
+	help
+	  Each embedded thread runs on its own host thread, and a set of
+	  semaphores ensures only one of them runs at a time.
+
+	  This is the long standing default, and the only option which supports
+	  every host architecture.
+
+config NATIVE_SIMULATOR_BACKEND_COROUTINES
+	bool "Stackful coroutines"
+	depends on !SMP
+	help
+	  Each embedded thread runs as a stackful coroutine, on the same host
+	  thread which runs the HW models. Switching is a userspace register save
+	  and restore. It needs no host scheduler, no signals, and no
+	  synchronization primitives.
+
+	  Compared to host threads this removes the kernel transitions from every
+	  context switch, and it keeps the whole simulation in one host thread,
+	  which an embedding program can drive directly.
+
+	  This needs host architecture support. It is implemented for x86-64 and
+	  AArch64 hosts. Selecting it for any other host fails during the build.
+
+endchoice
+
 endif # SOC_POSIX

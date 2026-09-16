@@ -60,6 +60,10 @@ else()
   endif()
 endif()
 
+# TARGET_HOST is a plain variable, so it is not visible in the board directory
+# which configures the runner build. Publish it where that code can read it.
+set_property(TARGET native_simulator PROPERTY NSI_TARGET_HOST "${TARGET_HOST}")
+
 if(EXISTS ${CMAKE_CURRENT_LIST_DIR}/${TARGET_HOST}.cmake)
   # Set necessary compiler & linker options for this specific host architecture
   include(${TARGET_HOST}.cmake)

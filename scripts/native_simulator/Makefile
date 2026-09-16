@@ -40,6 +40,7 @@ NSI_BUILD_OPTIONS?=${NSI_ARCH} ${NSI_COVERAGE}
 NSI_LINK_OPTIONS?=${NSI_ARCH} ${NSI_COVERAGE}
 NSI_BUILD_C_OPTIONS?=
 NSI_BUILD_CXX_OPTIONS?=
+NSI_BUILD_AS_OPTIONS?=
 #  Extra source files to be built in the runner context
 NSI_EXTRA_SRCS?=
 #  Extra include directories to be used while building in the runner context
@@ -83,6 +84,7 @@ COMMON_BUILD_FLAGS:=-DNSI_RUNNER_BUILD ${NSI_DEBUG} ${NSI_WARNINGS} ${NSI_OPT} $
   -DNSI_N_CPUS=${NSI_N_CPUS} -ffunction-sections -fdata-sections ${DEPENDFLAGS} ${NSI_BUILD_OPTIONS}
 CFLAGS:=-std=c11 ${COMMON_BUILD_FLAGS} ${NSI_BUILD_C_OPTIONS}
 CXXFLAGS:=${COMMON_BUILD_FLAGS} ${NSI_BUILD_CXX_OPTIONS}
+ASFLAGS:=${COMMON_BUILD_FLAGS} ${NSI_BUILD_AS_OPTIONS}
 ifdef NSI_MACHO
   FINALLINK_FLAGS:=${NSI_WARNINGS} -Wl,-dead_strip -pthread ${NSI_LINK_OPTIONS} -lm
 else
@@ -98,7 +100,11 @@ no_default:
 RUNNER_LIB:=runner.a
 
 ifeq ($(strip ${NSI_RUNNER_CORE_SRCS}),)
-  NSI_RUNNER_CORE_SRCS:=$(wildcard ${NSI_PATH}common/src/*.c)
+  # The host thread backend is the default. A caller which wants the coroutine
+  # backend instead passes an explicit source list, because the two define the
+  # same entry points and only one of them may be built.
+  NSI_RUNNER_CORE_SRCS:=$(filter-out %/nct_coro.c %/nce_coro.c %/nsi_context_if.c \
+%/nsi_context_host.c,$(wildcard ${NSI_PATH}common/src/*.c))
 endif
 SRCS:=${NSI_RUNNER_CORE_SRCS}
 ifdef NSI_NATIVE
@@ -117,7 +123,9 @@ ifdef NSI_NATIVE
 endif
 
 EXTRA_OBJS:=$(abspath $(addprefix $(NSI_BUILD_PATH)/,$(sort $(patsubst %.c,%.o,${NSI_EXTRA_SRCS:%.cpp=%.c}))))
-OBJS:=$(abspath $(addprefix $(NSI_BUILD_PATH)/,${SRCS:${NSI_PATH}%.c=%.o})) ${EXTRA_OBJS}
+# Sources may be C or assembly; the latter is used by the coroutine backend.
+LOCAL_OBJS:=$(patsubst ${NSI_PATH}%.S,%.o,$(patsubst ${NSI_PATH}%.c,%.o,${SRCS}))
+OBJS:=$(abspath $(addprefix $(NSI_BUILD_PATH)/,${LOCAL_OBJS})) ${EXTRA_OBJS}
 
 DEPENDFILES:=$(addsuffix .d,$(basename ${OBJS}))
 
@@ -141,6 +149,11 @@ ${NSI_BUILD_PATH}/%.o: /%.cpp ${NSI_PATH}Makefile ${NSI_CONFIG_FILE}
 ${NSI_BUILD_PATH}/%.o: ${NSI_PATH}/%.c ${NSI_PATH}Makefile ${NSI_CONFIG_FILE}
 	@if [ ! -d $(dir $@) ]; then mkdir -p $(dir $@); fi
 	${NSI_CC} ${NSI_CPPFLAGS} ${INCLUDES} ${CFLAGS} -c $< -o $@
+
+#Assembly sources build (preprocessed, so .S and not .s):
+${NSI_BUILD_PATH}/%.o: ${NSI_PATH}/%.S ${NSI_PATH}Makefile ${NSI_CONFIG_FILE}
+	@if [ ! -d $(dir $@) ]; then mkdir -p $(dir $@); fi
+	${NSI_CC} ${NSI_CPPFLAGS} ${INCLUDES} ${ASFLAGS} -c $< -o $@
 
 ${NSI_BUILD_PATH}/linker_script.ld : ${NSI_PATH}/common/other/linker_script.pre.ld | ${NSI_BUILD_PATH}
 	${NSI_CC} -x c -E -P $< -o $@  ${DEPENDFLAGS}
