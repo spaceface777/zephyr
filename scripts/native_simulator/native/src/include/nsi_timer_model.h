@@ -21,6 +21,8 @@ void hwtimer_wake_in_time(uint64_t time);
 void hwtimer_set_silent_ticks(int64_t sys_ticks);
 void hwtimer_enable(uint64_t period);
 int64_t hwtimer_get_pending_silent_ticks(void);
+uint64_t hwtimer_get_next_cpu_wake_time(void);
+bool hwtimer_advance_silently(uint64_t target_time);
 
 void hwtimer_reset_rtc(void);
 void hwtimer_set_rtc_offset(int64_t offset);

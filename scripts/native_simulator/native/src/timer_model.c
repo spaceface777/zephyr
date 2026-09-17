@@ -66,6 +66,16 @@ static uint64_t hw_timer_timer; /* Event timer exposed to the HW scheduler */
 static uint64_t hw_timer_tick_timer;
 static uint64_t hw_timer_awake_timer;
 
+#ifdef __APPLE__
+extern struct nsi_hw_event_st __nsi_hw_events_start[]
+	__asm("section$start$__ZNSIEVT$__events");
+extern struct nsi_hw_event_st __nsi_hw_events_end[]
+	__asm("section$end$__ZNSIEVT$__events");
+#else
+extern struct nsi_hw_event_st __nsi_hw_events_start[];
+extern struct nsi_hw_event_st __nsi_hw_events_end[];
+#endif
+
 static uint64_t tick_p; /* Period of the ticker */
 static int64_t silent_ticks;
 
@@ -224,6 +234,59 @@ static void hwtimer_awake_timer_reached(void)
 	hw_timer_awake_timer = NSI_NEVER;
 	hwtimer_update_timer();
 	hw_irq_ctrl_set_irq(PHONY_HARD_IRQ);
+}
+
+uint64_t hwtimer_get_next_cpu_wake_time(void)
+{
+	uint64_t tick_wake = hw_timer_tick_timer;
+
+	if (tick_wake != NSI_NEVER && silent_ticks > 0) {
+		const uint64_t count = (uint64_t)silent_ticks;
+
+		if (tick_p == 0 || count > (NSI_NEVER - tick_wake) / tick_p) {
+			tick_wake = NSI_NEVER;
+		} else {
+			tick_wake += count * tick_p;
+		}
+	}
+
+	uint64_t wake = NSI_MIN(tick_wake, hw_timer_awake_timer);
+
+	for (struct nsi_hw_event_st *event = __nsi_hw_events_start;
+	     event != __nsi_hw_events_end; event++) {
+		if (event->timer != &hw_timer_timer && *event->timer < wake) {
+			wake = *event->timer;
+		}
+	}
+	return wake;
+}
+
+bool hwtimer_advance_silently(uint64_t target_time)
+{
+	if (real_time_mode || target_time < nsi_hws_get_time() ||
+	    hwtimer_get_next_cpu_wake_time() <= target_time) {
+		return false;
+	}
+
+	if (hw_timer_tick_timer <= target_time) {
+		if (tick_p == 0) {
+			return false;
+		}
+		const uint64_t count = 1U + (target_time - hw_timer_tick_timer) / tick_p;
+
+		if (silent_ticks < 0 || count > (uint64_t)silent_ticks ||
+		    count > (NSI_NEVER - hw_timer_tick_timer) / tick_p) {
+			return false;
+		}
+		hw_timer_tick_timer += count * tick_p;
+		silent_ticks -= (int64_t)count;
+		hwtimer_update_timer();
+	}
+
+	extern uint64_t nsi_simu_time;
+	nsi_simu_time = target_time;
+	nsi_hws_find_next_event();
+	return true;
 }
 
 static void hwtimer_timer_reached(void)
