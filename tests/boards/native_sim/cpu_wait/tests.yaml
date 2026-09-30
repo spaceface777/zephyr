@@ -6,3 +6,11 @@ tests:
       - native_sim/native/64
     integration_platforms:
       - native_sim
+  boards.native_sim.cpu_wait.coroutines:
+    platform_allow:
+      - native_sim
+      - native_sim/native/64
+    integration_platforms:
+      - native_sim
+    extra_configs:
+      - CONFIG_NATIVE_SIMULATOR_CPU_BACKEND_COROUTINES=y
