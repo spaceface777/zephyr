@@ -29,6 +29,16 @@ extern "C" {
 void nsi_init(int argc, char *argv[]);
 void nsi_exec_for(uint64_t us);
 
+/*
+ * nsi_init() is these two steps, followed by nothing else:
+ * nsi_init_until_boot() initializes everything up to, but excluding, the CPU
+ * boot. nsi_boot() then boots the CPUs and runs the FIRST_SLEEP tasks.
+ * A program which drives the simulator itself can do work in between,
+ * knowing no embedded code has run yet.
+ */
+void nsi_init_until_boot(int argc, char *argv[]);
+void nsi_boot(void);
+
 #ifdef __cplusplus
 }
 #endif

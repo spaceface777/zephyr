@@ -50,6 +50,42 @@ NSI_FUNC_NORETURN void nsi_exit(int exit_code)
 }
 
 /**
+ * Run the native simulator initialization steps which precede CPU boot:
+ * PRE_BOOT_1 tasks, command line parsing, PRE_BOOT_2 tasks, HW_INIT tasks,
+ * HW scheduler initialization and PRE_BOOT_3 tasks. No embedded code runs.
+ */
+void nsi_init_until_boot(int argc, char *argv[])
+{
+	nsi_run_tasks(NSITASK_PRE_BOOT_1_LEVEL);
+	for (int i = 0; i < NSI_N_CPUS; i++) {
+		nsif_cpun_pre_cmdline_hooks(i);
+	}
+
+	nsi_handle_cmd_line(argc, argv);
+
+	nsi_run_tasks(NSITASK_PRE_BOOT_2_LEVEL);
+	for (int i = 0; i < NSI_N_CPUS; i++) {
+		nsif_cpun_pre_hw_init_hooks(i);
+	}
+
+	nsi_run_tasks(NSITASK_HW_INIT_LEVEL);
+	nsi_hws_init();
+
+	nsi_run_tasks(NSITASK_PRE_BOOT_3_LEVEL);
+}
+
+/**
+ * Boot the CPUs which are set to auto-boot, and run the FIRST_SLEEP tasks.
+ * To be called once, after nsi_init_until_boot().
+ */
+void nsi_boot(void)
+{
+	nsi_cpu_auto_boot();
+
+	nsi_run_tasks(NSITASK_FIRST_SLEEP_LEVEL);
+}
+
+/**
  * Run all early native simulator initialization steps, including command
  * line parsing and CPU start, until we are ready to let the HW models
  * run via nsi_hws_one_event()
@@ -67,26 +103,8 @@ void nsi_init(int argc, char *argv[])
 	setvbuf(stdout, NULL, _IOLBF, 512);
 	setvbuf(stderr, NULL, _IOLBF, 512);
 
-	nsi_run_tasks(NSITASK_PRE_BOOT_1_LEVEL);
-	for (int i = 0; i < NSI_N_CPUS; i++) {
-		nsif_cpun_pre_cmdline_hooks(i);
-	}
-
-	nsi_handle_cmd_line(argc, argv);
-
-	nsi_run_tasks(NSITASK_PRE_BOOT_2_LEVEL);
-	for (int i = 0; i < NSI_N_CPUS; i++) {
-		nsif_cpun_pre_hw_init_hooks(i);
-	}
-
-	nsi_run_tasks(NSITASK_HW_INIT_LEVEL);
-	nsi_hws_init();
-
-	nsi_run_tasks(NSITASK_PRE_BOOT_3_LEVEL);
-
-	nsi_cpu_auto_boot();
-
-	nsi_run_tasks(NSITASK_FIRST_SLEEP_LEVEL);
+	nsi_init_until_boot(argc, argv);
+	nsi_boot();
 }
 
 /**
