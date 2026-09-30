@@ -27,6 +27,10 @@ endif()
 #      This can be used to hide symbols a library may have set as visible outside of
 #      itself once the MCU image has been assembled.
 #      For ex. set_property(TARGET native_simulator APPEND PROPERTY LOCALIZE_EXTRA_OPTIONS "--localize-symbol=spinel*")
+#  RUNNER_EXCLUDE_SOURCES:
+#      Names of runner source files not to build, for ex. because a replacement is provided
+#      in INTERFACE_SOURCES
+#      For ex. set_property(TARGET native_simulator APPEND PROPERTY RUNNER_EXCLUDE_SOURCES "nsi_trace.c")
 #  Note: target_link_libraries() cannot be used on this library at this point.
 #        target_link_libraries() updates INTERFACE_LINK_LIBRARIES but wrapping it with extra
 #        information. This means we cannot directly pass it to the native_simulator runner build.
@@ -36,6 +40,7 @@ endif()
 add_library(native_simulator INTERFACE)
 set_property(TARGET native_simulator PROPERTY RUNNER_LINK_LIBRARIES "")
 set_property(TARGET native_simulator PROPERTY LOCALIZE_EXTRA_OPTIONS "")
+set_property(TARGET native_simulator PROPERTY RUNNER_EXCLUDE_SOURCES "")
 
 set(NSI_DIR ${ZEPHYR_BASE}/scripts/native_simulator CACHE PATH "Path to the native simulator")
 
