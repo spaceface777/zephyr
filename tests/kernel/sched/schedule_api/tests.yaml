@@ -38,3 +38,13 @@ tests:
     extra_args: FILE_SUFFIX=simple
     extra_configs:
       - CONFIG_TIMESLICING=n
+  kernel.scheduler.native_sim_coroutines:
+    filter: not CONFIG_SCHED_MULTIQ
+    platform_allow:
+      - native_sim
+      - native_sim/native/64
+    integration_platforms:
+      - native_sim
+    extra_configs:
+      - CONFIG_TIMESLICING=y
+      - CONFIG_NATIVE_SIMULATOR_CPU_BACKEND_COROUTINES=y
