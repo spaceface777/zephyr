@@ -17,7 +17,6 @@
 #include <inttypes.h>
 #include "nsi_tracing.h"
 #include "nsi_main.h"
-#include "nsi_safe_call.h"
 #include "nsi_hw_scheduler.h"
 #include "nsi_hws_models_if.h"
 
@@ -36,41 +35,13 @@ static uint64_t next_timer_time;
 static volatile sig_atomic_t signaled_end;
 
 /**
- * Handler for SIGTERM and SIGINT
+ * Request the simulation to stop gracefully before the next HW event.
+ * It only sets a flag, so it is safe to call from a signal handler.
  */
-static void nsi_hws_signal_end_handler(int sig)
+void nsi_hws_request_stop(void)
 {
 	signaled_end = 1;
 }
-
-/**
- * Set the handler for SIGTERM and SIGINT which will cause the
- * program to exit gracefully when they are received the 1st time
- *
- * Note that our handler only sets a variable indicating the signal was
- * received, and in each iteration of the hw main loop this variable is
- * evaluated.
- * If for some reason (the program is stuck) we never evaluate it, the program
- * would never exit.
- * Therefore we set SA_RESETHAND: This way, the 2nd time the signal is received
- * the default handler would be called to terminate the program no matter what.
- *
- * Note that SA_RESETHAND requires either _POSIX_C_SOURCE>=200809L or
- * _XOPEN_SOURCE>=500
- */
-static void nsi_hws_set_sig_handler(void)
-{
-	struct sigaction act;
-
-	act.sa_handler = nsi_hws_signal_end_handler;
-	NSI_SAFE_CALL(sigemptyset(&act.sa_mask));
-
-	act.sa_flags = SA_RESETHAND;
-
-	NSI_SAFE_CALL(sigaction(SIGTERM, &act, NULL));
-	NSI_SAFE_CALL(sigaction(SIGINT, &act, NULL));
-}
-
 
 static void nsi_hws_sleep_until_next_event(void)
 {
@@ -151,7 +122,6 @@ void nsi_hws_init(void)
 {
 	number_of_events = __nsi_hw_events_end - __nsi_hw_events_start;
 
-	nsi_hws_set_sig_handler();
 	nsi_hws_find_next_event();
 }
 

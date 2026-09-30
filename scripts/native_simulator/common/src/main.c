@@ -6,14 +6,13 @@
  */
 
 /*
- * Native simulator entry point (main)
+ * Native simulator initialization, execution and cleanup steps.
+ * The process entry point (main) is in nsi_main_standalone.c
  *
  * Documentation can be found starting in docs/README.md
  */
 
-#include <stdio.h>
-#include <stdlib.h>
-#include <stdbool.h>
+#include <stdint.h>
 #include "nsi_cpun_if.h"
 #include "nsi_tasks.h"
 #include "nsi_cmdline_main_if.h"
@@ -42,11 +41,6 @@ int nsi_exit_inner(int exit_code)
 	nsi_hws_cleanup();
 	nsi_run_tasks(NSITASK_ON_EXIT_POST_LEVEL);
 	return max_exit_code;
-}
-
-NSI_FUNC_NORETURN void nsi_exit(int exit_code)
-{
-	exit(nsi_exit_inner(exit_code));
 }
 
 /**
@@ -86,28 +80,6 @@ void nsi_boot(void)
 }
 
 /**
- * Run all early native simulator initialization steps, including command
- * line parsing and CPU start, until we are ready to let the HW models
- * run via nsi_hws_one_event()
- *
- * Note: This API should normally only be called by the native simulator main()
- */
-void nsi_init(int argc, char *argv[])
-{
-	/*
-	 * Let's ensure that even if we are redirecting to a file, we get stdout
-	 * and stderr line buffered (default for console)
-	 * Note that glibc ignores size. But just in case we set a reasonable
-	 * number in case somebody tries to compile against a different library
-	 */
-	setvbuf(stdout, NULL, _IOLBF, 512);
-	setvbuf(stderr, NULL, _IOLBF, 512);
-
-	nsi_init_until_boot(argc, argv);
-	nsi_boot();
-}
-
-/**
  * Execute the simulator for at least the specified timeout, then
  * return.  Note that this does not affect event timing, so the "next
  * event" may be significantly after the request if the hardware has
@@ -123,23 +95,3 @@ void nsi_exec_for(uint64_t us)
 		nsi_hws_one_event();
 	} while (nsi_hws_get_time() < (start + us));
 }
-
-#ifndef NSI_NO_MAIN
-
-/**
- *
- * Note that this main() is not used when building fuzz cases,
- * as libfuzzer has its own main(),
- * and calls the "OS" through a per-case fuzz test entry point.
- */
-int main(int argc, char *argv[])
-{
-	nsi_init(argc, argv);
-	while (true) {
-		nsi_hws_one_event();
-	}
-
-	NSI_CODE_UNREACHABLE; /* LCOV_EXCL_LINE */
-}
-
-#endif /* NSI_NO_MAIN */
