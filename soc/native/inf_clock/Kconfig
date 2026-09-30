@@ -48,6 +48,14 @@ config NATIVE_SIMULATOR_AUTOSTART_MCU
 	  If that MCU was, by HW design, going to start at HW boot anyhow, this option does nothing.
 	  This option is meant to facilitate development.
 
+config NATIVE_SIMULATOR_RUNNER_LIBRARY
+	bool "Build the runner library without the final executable"
+	depends on !BUILD_OUTPUT_EXE
+	help
+	  When the final executable is not built (BUILD_OUTPUT_EXE disabled), still build the
+	  native simulator runner library (zephyr/NSI/runner.a), for a program which does the
+	  final link itself, together with the embedded image (zephyr/zephyr.elf).
+
 config NATIVE_SIMULATOR_STATIC_LINKING
 	bool "Attempt to use static linking"
 	help
