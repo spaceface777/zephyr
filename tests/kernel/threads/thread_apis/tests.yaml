@@ -22,3 +22,12 @@ tests:
       - CONFIG_SCHED_SIMPLE=y
       - CONFIG_SCHED_CPU_MASK=y
       - CONFIG_SCHED_CPU_MASK_PIN_ONLY=y
+  kernel.threads.apis.native_sim_coroutines:
+    min_flash: 34
+    platform_allow:
+      - native_sim
+      - native_sim/native/64
+    integration_platforms:
+      - native_sim
+    extra_configs:
+      - CONFIG_NATIVE_SIMULATOR_CPU_BACKEND_COROUTINES=y

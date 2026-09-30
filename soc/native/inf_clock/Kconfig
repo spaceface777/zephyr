@@ -55,4 +55,27 @@ config NATIVE_SIMULATOR_STATIC_LINKING
 
 	  Static linking depends on all required libraries being available as static libraries.
 
+choice NATIVE_SIMULATOR_CPU_BACKEND
+	prompt "Embedded CPU and thread emulation"
+	default NATIVE_SIMULATOR_CPU_BACKEND_PTHREADS
+
+config NATIVE_SIMULATOR_CPU_BACKEND_PTHREADS
+	bool "Host threads"
+	help
+	  Run the embedded CPU and each Zephyr thread in its own host thread, and let only one
+	  of them run at a time.
+
+config NATIVE_SIMULATOR_CPU_BACKEND_COROUTINES
+	bool "Coroutines"
+	depends on NATIVE_SIMULATOR_NUMBER_MCUS = 1
+	help
+	  Run the embedded CPU and each Zephyr thread as a coroutine on the one host thread which
+	  also runs the HW models. Switching between Zephyr threads, and between the CPU and the
+	  HW models, is then a user space register switch instead of a host thread wake up,
+	  which is much faster.
+	  The behavior and the order of execution are the same as with host threads.
+	  Only supported on x86-64, x86 and AArch64 hosts.
+
+endchoice
+
 endif # SOC_POSIX
