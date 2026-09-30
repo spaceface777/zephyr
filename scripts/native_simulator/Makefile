@@ -46,6 +46,9 @@ NSI_EXTRA_SRCS?=
 NSI_EXTRA_INCLUDES?=
 #  Extra libraries to be linked to the final executable
 NSI_EXTRA_LIBS?=
+#  Runner source files (file names, like nsi_trace.c) not to build, typically because the
+#  caller provides its own replacement in NSI_EXTRA_SRCS
+NSI_EXCLUDE_SRCS?=
 
 SHELL?=bash
 #  Compiler
@@ -86,6 +89,7 @@ SRCS:=$(shell ls ${NSI_PATH}common/src/*.c)
 ifdef NSI_NATIVE
   SRCS+=$(shell ls ${NSI_PATH}native/src/*.c)
 endif
+SRCS:=$(filter-out $(addprefix %/,${NSI_EXCLUDE_SRCS}),${SRCS})
 
 INCLUDES:=-I${NSI_PATH}common/src/include/ \
  -I${NSI_PATH}common/src \
