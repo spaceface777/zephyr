@@ -46,6 +46,11 @@ NSI_EXTRA_SRCS?=
 NSI_EXTRA_INCLUDES?=
 #  Extra libraries to be linked to the final executable
 NSI_EXTRA_LIBS?=
+#  Implementation of the embedded CPUs start/stop (NCE) and threads (NCT) emulation:
+#   pthreads: one host thread per embedded CPU and thread (common/src/nce.c & nct.c)
+#   coroutines: one host thread, and a coroutine per embedded CPU and thread (common/coro/).
+#     Supports x86-64, i386 and AArch64 hosts.
+NSI_CPU_BACKEND?=pthreads
 
 SHELL?=bash
 #  Compiler
@@ -86,9 +91,16 @@ SRCS:=$(shell ls ${NSI_PATH}common/src/*.c)
 ifdef NSI_NATIVE
   SRCS+=$(shell ls ${NSI_PATH}native/src/*.c)
 endif
+ifeq (${NSI_CPU_BACKEND},coroutines)
+  SRCS:=$(filter-out %/nce.c %/nct.c,${SRCS}) \
+    ${NSI_PATH}common/coro/nsi_cpu_coro.c ${NSI_PATH}common/coro/nsi_coro.S
+else ifneq (${NSI_CPU_BACKEND},pthreads)
+  $(error NSI_CPU_BACKEND must be pthreads or coroutines, not "${NSI_CPU_BACKEND}")
+endif
 
 INCLUDES:=-I${NSI_PATH}common/src/include/ \
  -I${NSI_PATH}common/src \
+ -I${NSI_PATH}common/coro \
  ${NSI_EXTRA_INCLUDES}
 
 ifdef NSI_NATIVE
@@ -96,7 +108,8 @@ ifdef NSI_NATIVE
 endif
 
 EXTRA_OBJS:=$(abspath $(addprefix $(NSI_BUILD_PATH)/,$(sort $(patsubst %.c,%.o,${NSI_EXTRA_SRCS:%.cpp=%.c}))))
-OBJS:=$(abspath $(addprefix $(NSI_BUILD_PATH)/,${SRCS:${NSI_PATH}%.c=%.o})) ${EXTRA_OBJS}
+OBJS:=$(abspath $(addprefix $(NSI_BUILD_PATH)/,$(patsubst ${NSI_PATH}%.S,%.o,${SRCS:${NSI_PATH}%.c=%.o}))) \
+  ${EXTRA_OBJS}
 
 DEPENDFILES:=$(addsuffix .d,$(basename ${OBJS}))
 
@@ -120,6 +133,10 @@ ${NSI_BUILD_PATH}/%.o: /%.cpp ${NSI_PATH}Makefile ${NSI_CONFIG_FILE}
 ${NSI_BUILD_PATH}/%.o: ${NSI_PATH}/%.c ${NSI_PATH}Makefile ${NSI_CONFIG_FILE}
 	@if [ ! -d $(dir $@) ]; then mkdir -p $(dir $@); fi
 	${NSI_CC} ${NSI_CPPFLAGS} ${INCLUDES} ${CFLAGS} -c $< -o $@
+
+${NSI_BUILD_PATH}/%.o: ${NSI_PATH}/%.S ${NSI_PATH}Makefile ${NSI_CONFIG_FILE}
+	@if [ ! -d $(dir $@) ]; then mkdir -p $(dir $@); fi
+	${NSI_CC} ${NSI_CPPFLAGS} ${INCLUDES} ${COMMON_BUILD_FLAGS} -c $< -o $@
 
 ${NSI_BUILD_PATH}/linker_script.ld : ${NSI_PATH}/common/other/linker_script.pre.ld | ${NSI_BUILD_PATH}
 	${NSI_CC} -x c -E -P $< -o $@  ${DEPENDFLAGS}
