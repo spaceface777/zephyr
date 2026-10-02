@@ -12,14 +12,13 @@ extern "C" {
 #endif
 
 /*
- * Minimal stackful coroutine switch (see nsi_coro.S).
+ * Minimal stackful coroutine interface.
  *
- * A switch saves the callee-saved registers of the running code on its own
- * stack, moves to the target stack, and restores the target's registers from
- * it. Nothing else is saved, queued or scheduled.
+ * The selected implementation may use the small architecture-specific switch
+ * in nsi_coro.S or the host libc's ucontext API. Nothing here makes scheduling
+ * decisions; it only transfers execution between stacks.
  *
- * A continuation is the saved stack pointer of a suspended coroutine. It is
- * valid for exactly one resume.
+ * A continuation is opaque to the caller and is valid for exactly one resume.
  */
 typedef void *nsi_coro_t;
 
@@ -41,6 +40,12 @@ nsi_coro_t nsi_coro_create(void *stack_top, nsi_coro_entry_f entry);
  * back, with the continuation of that somebody.
  */
 nsi_coro_t nsi_coro_switch(nsi_coro_t target);
+
+/*
+ * Release implementation-specific bookkeeping for a coroutine after it can no
+ * longer be resumed. The caller still owns the stack itself.
+ */
+void nsi_coro_destroy(nsi_coro_t coro);
 
 #ifdef __cplusplus
 }

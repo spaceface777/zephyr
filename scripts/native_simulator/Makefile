@@ -48,8 +48,10 @@ NSI_EXTRA_INCLUDES?=
 NSI_EXTRA_LIBS?=
 #  Implementation of the embedded CPUs start/stop (NCE) and threads (NCT) emulation:
 #   pthreads: one host thread per embedded CPU and thread (common/src/nce.c & nct.c)
-#   coroutines: one host thread, and a coroutine per embedded CPU and thread (common/coro/).
-#     Supports x86-64, i386 and AArch64 hosts.
+#   coroutines: one host thread, and a coroutine per embedded CPU and thread using the
+#     small architecture-specific switch in common/coro/nsi_coro.S.
+#   ucontext: the same coroutine NCE/NCT implementation using the host libc's
+#     getcontext()/makecontext()/swapcontext() instead of architecture-specific assembly.
 NSI_CPU_BACKEND?=pthreads
 
 SHELL?=bash
@@ -93,9 +95,15 @@ ifdef NSI_NATIVE
 endif
 ifeq (${NSI_CPU_BACKEND},coroutines)
   SRCS:=$(filter-out %/nce.c %/nct.c,${SRCS}) \
-    ${NSI_PATH}common/coro/nsi_cpu_coro.c ${NSI_PATH}common/coro/nsi_coro.S
+    ${NSI_PATH}common/coro/nsi_cpu_coro.c \
+    ${NSI_PATH}common/coro/nsi_coro.S \
+    ${NSI_PATH}common/coro/nsi_coro_asm.c
+else ifeq (${NSI_CPU_BACKEND},ucontext)
+  SRCS:=$(filter-out %/nce.c %/nct.c,${SRCS}) \
+    ${NSI_PATH}common/coro/nsi_cpu_coro.c \
+    ${NSI_PATH}common/coro/nsi_coro_ucontext.c
 else ifneq (${NSI_CPU_BACKEND},pthreads)
-  $(error NSI_CPU_BACKEND must be pthreads or coroutines, not "${NSI_CPU_BACKEND}")
+  $(error NSI_CPU_BACKEND must be pthreads, coroutines or ucontext, not "${NSI_CPU_BACKEND}")
 endif
 
 INCLUDES:=-I${NSI_PATH}common/src/include/ \

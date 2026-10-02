@@ -76,6 +76,18 @@ config NATIVE_SIMULATOR_CPU_BACKEND_COROUTINES
 	  The behavior and the order of execution are the same as with host threads.
 	  Only supported on x86-64, x86 and AArch64 hosts.
 
+config NATIVE_SIMULATOR_CPU_BACKEND_UCONTEXT
+	bool "Coroutines using ucontext"
+	depends on NATIVE_SIMULATOR_NUMBER_MCUS = 1
+	help
+	  Use the same single-host-thread coroutine implementation for the embedded CPU and
+	  Zephyr threads, but perform context switches with getcontext(), makecontext() and
+	  swapcontext() from the host C library instead of architecture-specific assembly.
+
+	  This is primarily useful as a reference implementation and for comparing the
+	  performance and maintenance trade-offs. It requires a host C library which provides
+	  the ucontext API.
+
 endchoice
 
 endif # SOC_POSIX

@@ -8,12 +8,12 @@
  * CPU start/stop emulation (NCE, see nce_if.h) and CPU thread emulation
  * (NCT, see nct_if.h) implemented with stackful coroutines.
  *
- * This is an alternative to nce.c and nct.c, selected with
- * NSI_CPU_BACKEND=coroutines. Instead of one host thread per embedded CPU and
- * per embedded thread, which hand over execution with semaphores, everything
- * runs on the single host thread which runs the HW models, and each embedded
- * CPU and thread is a coroutine with its own stack. A hand-over is a
- * user-space register switch (nsi_coro.S) instead of a host thread wake up.
+ * This is an alternative to nce.c and nct.c, selected with either
+ * NSI_CPU_BACKEND=coroutines or NSI_CPU_BACKEND=ucontext. Instead of one host
+ * thread per embedded CPU and per embedded thread, which hand over execution
+ * with semaphores, everything runs on the single host thread which runs the HW
+ * models, and each embedded CPU and thread is a coroutine with its own stack.
+ * A hand-over is a user-space context switch instead of a host thread wake up.
  *
  * As with the host thread implementation, this makes no scheduling decision:
  * the embedded OS says which of its threads runs next, and the HW models say
@@ -100,6 +100,8 @@ static void *zombie_mem;
 static void ctx_free(struct ctx *c)
 {
 	if (c->map != NULL) {
+		nsi_coro_destroy(c->k);
+		c->k = NULL;
 		(void)munmap(c->map, c->map_size);
 		c->map = NULL;
 	}
