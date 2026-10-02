@@ -64,7 +64,18 @@ void __sanitizer_finish_switch_fiber(void *fake_stack_save, const void **bottom_
 				     size_t *size_old);
 #endif
 
+/*
+ * The C++ runtime's per thread exception state (Itanium C++ ABI, 2.2.2): the stack of
+ * caught exceptions and the count of uncaught ones. Only present in C++ programs.
+ */
+struct cxa_eh_globals {
+	void *caught_exceptions;
+	unsigned int uncaught_exceptions;
+};
+struct cxa_eh_globals *__cxa_get_globals(void) __attribute__((weak));
+
 struct ctx {
+	struct cxa_eh_globals eh; /* Saved C++ exception state */
 	nsi_coro_t k; /* Saved continuation while suspended */
 	void *map; /* Stack mapping, NULL for the host thread's own stack */
 	size_t map_size;
@@ -118,6 +129,9 @@ static void after_switch(nsi_coro_t from)
 		nsi_print_error_and_exit("%s: Cannot restore the floating point environment\n",
 					 __func__);
 	}
+	if (__cxa_get_globals != NULL) {
+		*__cxa_get_globals() = cur->eh;
+	}
 	errno = cur->err;
 }
 
@@ -132,6 +146,9 @@ static void switch_to(struct ctx *to, bool final)
 					 __func__);
 	}
 	cur->err = errno;
+	if (__cxa_get_globals != NULL) {
+		cur->eh = *__cxa_get_globals();
+	}
 	if (fegetenv(&cur->fenv) != 0) {
 		nsi_print_error_and_exit("%s: Cannot save the floating point environment\n",
 					 __func__);
