@@ -50,6 +50,8 @@ NSI_EXTRA_LIBS?=
 # Each side is selected independently. pthreads remain the default.
 NSI_NCE_BACKEND?=pthreads
 NSI_NCT_BACKEND?=pthreads
+# Stackful coroutine primitive: asm or ucontext
+NSI_CORO_BACKEND?=asm
 
 SHELL?=bash
 #  Compiler
@@ -115,8 +117,14 @@ ifeq (${NSI_NCT_BACKEND},coroutines)
     ${NSI_PATH}common/coro/nct_coro.c
 endif
 ifneq ($(filter coroutines,${NSI_NCE_BACKEND} ${NSI_NCT_BACKEND}),)
-  SRCS+=${NSI_PATH}common/coro/nsi_coro_ctx.c \
-    ${NSI_PATH}common/coro/nsi_coro.S
+  SRCS+=${NSI_PATH}common/coro/nsi_coro_ctx.c
+  ifeq (${NSI_CORO_BACKEND},asm)
+    SRCS+=${NSI_PATH}common/coro/nsi_coro.S
+  else ifeq (${NSI_CORO_BACKEND},ucontext)
+    SRCS+=${NSI_PATH}common/coro/nsi_coro_ucontext.c
+  else
+    $(error NSI_CORO_BACKEND must be asm or ucontext, not "${NSI_CORO_BACKEND}")
+  endif
 endif
 
 INCLUDES:=-I${NSI_PATH}common/src/include/ \

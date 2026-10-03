@@ -98,4 +98,25 @@ config NATIVE_SIMULATOR_NCE_BACKEND_COROUTINES
 
 endchoice
 
+choice NATIVE_SIMULATOR_COROUTINE_IMPLEMENTATION
+	prompt "Stackful coroutine primitive"
+	depends on NATIVE_SIMULATOR_NCT_BACKEND_COROUTINES
+	default NATIVE_SIMULATOR_COROUTINE_IMPLEMENTATION_ASM
+
+config NATIVE_SIMULATOR_COROUTINE_IMPLEMENTATION_ASM
+	bool "Minimal architecture-specific switch"
+	help
+	  Use the small native_sim assembly switch which saves the host ABI's
+	  callee-saved state and changes stacks directly.
+	  Supported on x86-64 SysV, i386 SysV and AArch64 AAPCS64.
+
+config NATIVE_SIMULATOR_COROUTINE_IMPLEMENTATION_UCONTEXT
+	bool "ucontext"
+	help
+	  Use getcontext(), makecontext() and swapcontext() from the host C
+	  library. This requires a host libc which still provides the historical
+	  ucontext API.
+
+endchoice
+
 endif # SOC_POSIX
