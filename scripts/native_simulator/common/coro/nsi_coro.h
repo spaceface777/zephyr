@@ -11,6 +11,10 @@
 extern "C" {
 #endif
 
+#ifndef NSI_CORO_STACK_SIZE
+#define NSI_CORO_STACK_SIZE (8 * 1024 * 1024)
+#endif
+
 /*
  * Minimal stackful coroutine switch (see nsi_coro.S).
  *

@@ -46,11 +46,10 @@ NSI_EXTRA_SRCS?=
 NSI_EXTRA_INCLUDES?=
 #  Extra libraries to be linked to the final executable
 NSI_EXTRA_LIBS?=
-#  Implementation of the embedded CPUs start/stop (NCE) and threads (NCT) emulation:
-#   pthreads: one host thread per embedded CPU and thread (common/src/nce.c & nct.c)
-#   coroutines: one host thread, and a coroutine per embedded CPU and thread (common/coro/).
-#     Supports x86-64, i386 and AArch64 hosts.
-NSI_CPU_BACKEND?=pthreads
+# Implementation of the embedded CPU start/stop (NCE) and thread (NCT) emulation.
+# Each side is selected independently. pthreads remain the default.
+NSI_NCE_BACKEND?=pthreads
+NSI_NCT_BACKEND?=pthreads
 
 SHELL?=bash
 #  Compiler
@@ -73,8 +72,14 @@ NSI_CPPFLAGS?=-D_POSIX_C_SOURCE=200809L -D_XOPEN_SOURCE=600 -D_XOPEN_SOURCE_EXTE
 
 NO_PIE_CO:=-fno-pie -fno-pic
 DEPENDFLAGS:=-MMD -MP
+CORO_BUILD_FLAGS:=
+ifeq (${NSI_NCE_BACKEND},pthreads)
+  CORO_BUILD_FLAGS+=-DNSI_NCE_BACKEND_PTHREADS
+endif
+
 COMMON_BUILD_FLAGS:=-DNSI_RUNNER_BUILD ${NSI_DEBUG} ${NSI_WARNINGS} ${NSI_OPT} ${NO_PIE_CO} \
-  -DNSI_N_CPUS=${NSI_N_CPUS} -ffunction-sections -fdata-sections ${DEPENDFLAGS} ${NSI_BUILD_OPTIONS}
+  -DNSI_N_CPUS=${NSI_N_CPUS} ${CORO_BUILD_FLAGS} -ffunction-sections -fdata-sections \
+  ${DEPENDFLAGS} ${NSI_BUILD_OPTIONS}
 CFLAGS:=-std=c11 ${COMMON_BUILD_FLAGS} ${NSI_BUILD_C_OPTIONS}
 CXXFLAGS:=${COMMON_BUILD_FLAGS} ${NSI_BUILD_CXX_OPTIONS}
 FINALLINK_FLAGS:=${NO_PIE_CO} -no-pie  ${NSI_WARNINGS} \
@@ -91,11 +96,27 @@ SRCS:=$(shell ls ${NSI_PATH}common/src/*.c)
 ifdef NSI_NATIVE
   SRCS+=$(shell ls ${NSI_PATH}native/src/*.c)
 endif
-ifeq (${NSI_CPU_BACKEND},coroutines)
-  SRCS:=$(filter-out %/nce.c %/nct.c,${SRCS}) \
-    ${NSI_PATH}common/coro/nsi_cpu_coro.c ${NSI_PATH}common/coro/nsi_coro.S
-else ifneq (${NSI_CPU_BACKEND},pthreads)
-  $(error NSI_CPU_BACKEND must be pthreads or coroutines, not "${NSI_CPU_BACKEND}")
+
+ifeq ($(filter pthreads coroutines,${NSI_NCE_BACKEND}),)
+  $(error NSI_NCE_BACKEND must be pthreads or coroutines, not "${NSI_NCE_BACKEND}")
+endif
+ifeq ($(filter pthreads coroutines,${NSI_NCT_BACKEND}),)
+  $(error NSI_NCT_BACKEND must be pthreads or coroutines, not "${NSI_NCT_BACKEND}")
+endif
+ifeq (${NSI_NCE_BACKEND},coroutines)
+  ifneq (${NSI_NCT_BACKEND},coroutines)
+    $(error coroutine NCE requires coroutine NCT)
+  endif
+  SRCS:=$(filter-out %/nce.c,${SRCS}) \
+    ${NSI_PATH}common/coro/nce_coro.c
+endif
+ifeq (${NSI_NCT_BACKEND},coroutines)
+  SRCS:=$(filter-out %/nct.c,${SRCS}) \
+    ${NSI_PATH}common/coro/nct_coro.c
+endif
+ifneq ($(filter coroutines,${NSI_NCE_BACKEND} ${NSI_NCT_BACKEND}),)
+  SRCS+=${NSI_PATH}common/coro/nsi_coro_ctx.c \
+    ${NSI_PATH}common/coro/nsi_coro.S
 endif
 
 INCLUDES:=-I${NSI_PATH}common/src/include/ \

@@ -13,4 +13,5 @@ tests:
     integration_platforms:
       - native_sim
     extra_configs:
-      - CONFIG_NATIVE_SIMULATOR_CPU_BACKEND_COROUTINES=y
+      - CONFIG_NATIVE_SIMULATOR_NCT_BACKEND_COROUTINES=y
+      - CONFIG_NATIVE_SIMULATOR_NCE_BACKEND_COROUTINES=y
