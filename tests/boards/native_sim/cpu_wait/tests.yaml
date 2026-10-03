@@ -15,3 +15,13 @@ tests:
     extra_configs:
       - CONFIG_NATIVE_SIMULATOR_NCT_BACKEND_COROUTINES=y
       - CONFIG_NATIVE_SIMULATOR_NCE_BACKEND_COROUTINES=y
+  boards.native_sim.cpu_wait.ucontext:
+    platform_allow:
+      - native_sim
+      - native_sim/native/64
+    integration_platforms:
+      - native_sim
+    extra_configs:
+      - CONFIG_NATIVE_SIMULATOR_NCT_BACKEND_COROUTINES=y
+      - CONFIG_NATIVE_SIMULATOR_NCE_BACKEND_COROUTINES=y
+      - CONFIG_NATIVE_SIMULATOR_COROUTINE_IMPLEMENTATION_UCONTEXT=y
