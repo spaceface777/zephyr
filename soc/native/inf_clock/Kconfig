@@ -55,26 +55,46 @@ config NATIVE_SIMULATOR_STATIC_LINKING
 
 	  Static linking depends on all required libraries being available as static libraries.
 
-choice NATIVE_SIMULATOR_CPU_BACKEND
-	prompt "Embedded CPU and thread emulation"
-	default NATIVE_SIMULATOR_CPU_BACKEND_PTHREADS
+choice NATIVE_SIMULATOR_NCT_BACKEND
+	prompt "Embedded thread (NCT) emulation"
+	default NATIVE_SIMULATOR_NCT_BACKEND_PTHREADS
 
-config NATIVE_SIMULATOR_CPU_BACKEND_PTHREADS
+config NATIVE_SIMULATOR_NCT_BACKEND_PTHREADS
 	bool "Host threads"
 	help
-	  Run the embedded CPU and each Zephyr thread in its own host thread, and let only one
-	  of them run at a time.
+	  Run each embedded OS thread in its own host thread.
 
-config NATIVE_SIMULATOR_CPU_BACKEND_COROUTINES
+config NATIVE_SIMULATOR_NCT_BACKEND_COROUTINES
 	bool "Coroutines"
 	depends on NATIVE_SIMULATOR_NUMBER_MCUS = 1
 	help
-	  Run the embedded CPU and each Zephyr thread as a coroutine on the one host thread which
-	  also runs the HW models. Switching between Zephyr threads, and between the CPU and the
-	  HW models, is then a user space register switch instead of a host thread wake up,
-	  which is much faster.
-	  The behavior and the order of execution are the same as with host threads.
-	  Only supported on x86-64, x86 and AArch64 hosts.
+	  Run the embedded OS threads as stackful coroutines on one host thread.
+	  The embedded OS still decides which thread runs next; NCT only performs
+	  the requested context transfer.
+
+endchoice
+
+choice NATIVE_SIMULATOR_NCE_BACKEND
+	prompt "CPU start/stop (NCE) emulation"
+	default NATIVE_SIMULATOR_NCE_BACKEND_PTHREADS
+
+config NATIVE_SIMULATOR_NCE_BACKEND_PTHREADS
+	bool "Host thread"
+	help
+	  Run the embedded CPU on a host thread and hand execution between the
+	  hardware models and embedded software with host synchronization.
+
+config NATIVE_SIMULATOR_NCE_BACKEND_COROUTINES
+	bool "Coroutine"
+	depends on NATIVE_SIMULATOR_NUMBER_MCUS = 1
+	depends on NATIVE_SIMULATOR_NCT_BACKEND_COROUTINES
+	help
+	  Run the CPU/HW handoff as a stackful coroutine switch on the same host
+	  thread as the hardware models.
+
+	  Coroutine NCE requires coroutine NCT. pthread NCT moves the running
+	  embedded software to another host thread, after which a same-thread
+	  stackful switch cannot resume the hardware/root context.
 
 endchoice
 
