@@ -117,6 +117,12 @@ config NATIVE_SIMULATOR_COROUTINE_IMPLEMENTATION_UCONTEXT
 	  library. This requires a host libc which still provides the historical
 	  ucontext API.
 
+config NATIVE_SIMULATOR_COROUTINE_IMPLEMENTATION_BOOST_CONTEXT
+	bool "Boost.Context fcontext"
+	help
+	  Use Boost.Context's low-level fcontext primitive. Selecting this option
+	  adds a host build dependency on Boost.Context.
+
 endchoice
 
 endif # SOC_POSIX

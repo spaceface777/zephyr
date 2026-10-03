@@ -50,8 +50,11 @@ NSI_EXTRA_LIBS?=
 # Each side is selected independently. pthreads remain the default.
 NSI_NCE_BACKEND?=pthreads
 NSI_NCT_BACKEND?=pthreads
-# Stackful coroutine primitive: asm or ucontext
+# Stackful coroutine primitive: asm, ucontext or boost
 NSI_CORO_BACKEND?=asm
+# Used only by the Boost.Context primitive.
+NSI_BOOST_CONTEXT_INCLUDES?=
+NSI_BOOST_CONTEXT_LIB?=-lboost_context
 
 SHELL?=bash
 #  Compiler
@@ -83,7 +86,7 @@ COMMON_BUILD_FLAGS:=-DNSI_RUNNER_BUILD ${NSI_DEBUG} ${NSI_WARNINGS} ${NSI_OPT} $
   -DNSI_N_CPUS=${NSI_N_CPUS} ${CORO_BUILD_FLAGS} -ffunction-sections -fdata-sections \
   ${DEPENDFLAGS} ${NSI_BUILD_OPTIONS}
 CFLAGS:=-std=c11 ${COMMON_BUILD_FLAGS} ${NSI_BUILD_C_OPTIONS}
-CXXFLAGS:=${COMMON_BUILD_FLAGS} ${NSI_BUILD_CXX_OPTIONS}
+CXXFLAGS:=-std=c++11 ${COMMON_BUILD_FLAGS} ${NSI_BUILD_CXX_OPTIONS}
 FINALLINK_FLAGS:=${NO_PIE_CO} -no-pie  ${NSI_WARNINGS} \
   -Wl,--gc-sections -ldl -pthread \
   ${NSI_LINK_OPTIONS} -lm
@@ -122,14 +125,18 @@ ifneq ($(filter coroutines,${NSI_NCE_BACKEND} ${NSI_NCT_BACKEND}),)
     SRCS+=${NSI_PATH}common/coro/nsi_coro.S
   else ifeq (${NSI_CORO_BACKEND},ucontext)
     SRCS+=${NSI_PATH}common/coro/nsi_coro_ucontext.c
+  else ifeq (${NSI_CORO_BACKEND},boost)
+    SRCS+=${NSI_PATH}common/coro/nsi_coro_boost.cpp
+    CORO_EXTRA_LIBS:=${NSI_BOOST_CONTEXT_LIB}
   else
-    $(error NSI_CORO_BACKEND must be asm or ucontext, not "${NSI_CORO_BACKEND}")
+    $(error NSI_CORO_BACKEND must be asm, ucontext or boost, not "${NSI_CORO_BACKEND}")
   endif
 endif
 
 INCLUDES:=-I${NSI_PATH}common/src/include/ \
  -I${NSI_PATH}common/src \
  -I${NSI_PATH}common/coro \
+ ${NSI_BOOST_CONTEXT_INCLUDES} \
  ${NSI_EXTRA_INCLUDES}
 
 ifdef NSI_NATIVE
@@ -137,7 +144,8 @@ ifdef NSI_NATIVE
 endif
 
 EXTRA_OBJS:=$(abspath $(addprefix $(NSI_BUILD_PATH)/,$(sort $(patsubst %.c,%.o,${NSI_EXTRA_SRCS:%.cpp=%.c}))))
-OBJS:=$(abspath $(addprefix $(NSI_BUILD_PATH)/,$(patsubst ${NSI_PATH}%.S,%.o,${SRCS:${NSI_PATH}%.c=%.o}))) \
+OBJS:=$(abspath $(addprefix $(NSI_BUILD_PATH)/, \
+  $(patsubst ${NSI_PATH}%.S,%.o,$(patsubst ${NSI_PATH}%.cpp,%.o,${SRCS:${NSI_PATH}%.c=%.o})))) \
   ${EXTRA_OBJS}
 
 DEPENDFILES:=$(addsuffix .d,$(basename ${OBJS}))
@@ -163,6 +171,10 @@ ${NSI_BUILD_PATH}/%.o: ${NSI_PATH}/%.c ${NSI_PATH}Makefile ${NSI_CONFIG_FILE}
 	@if [ ! -d $(dir $@) ]; then mkdir -p $(dir $@); fi
 	${NSI_CC} ${NSI_CPPFLAGS} ${INCLUDES} ${CFLAGS} -c $< -o $@
 
+${NSI_BUILD_PATH}/%.o: ${NSI_PATH}/%.cpp ${NSI_PATH}Makefile ${NSI_CONFIG_FILE}
+	@if [ ! -d $(dir $@) ]; then mkdir -p $(dir $@); fi
+	${NSI_CXX} ${NSI_CPPFLAGS} ${INCLUDES} ${CXXFLAGS} -c $< -o $@
+
 ${NSI_BUILD_PATH}/%.o: ${NSI_PATH}/%.S ${NSI_PATH}Makefile ${NSI_CONFIG_FILE}
 	@if [ ! -d $(dir $@) ]; then mkdir -p $(dir $@); fi
 	${NSI_CC} ${NSI_CPPFLAGS} ${INCLUDES} ${COMMON_BUILD_FLAGS} -c $< -o $@
@@ -186,7 +198,7 @@ ${NSI_BUILD_PATH}/%.loc_cpusw.o: /% ${NSI_CONFIG_FILE}
 ${NSI_EXE}: ${NSI_BUILD_PATH}/${RUNNER_LIB} ${LOCALIZED_EMBSW} ${NSI_EXTRA_LIBS} \
  ${NSI_BUILD_PATH}/linker_script.ld
 	${NSI_LINKER} -Wl,--whole-archive ${LOCALIZED_EMBSW} ${NSI_BUILD_PATH}/${RUNNER_LIB} \
-	  ${NSI_EXTRA_LIBS} -Wl,--no-whole-archive \
+	  ${NSI_EXTRA_LIBS} -Wl,--no-whole-archive ${CORO_EXTRA_LIBS} \
 	  -o $@ ${FINALLINK_FLAGS} -T ${NSI_BUILD_PATH}/linker_script.ld
 
 Makefile: ;
