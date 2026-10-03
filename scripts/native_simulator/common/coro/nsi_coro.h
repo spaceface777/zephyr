@@ -16,14 +16,11 @@ extern "C" {
 #endif
 
 /*
- * Minimal stackful coroutine switch (see nsi_coro.S).
+ * Minimal stackful coroutine interface.
  *
- * A switch saves the callee-saved registers of the running code on its own
- * stack, moves to the target stack, and restores the target's registers from
- * it. Nothing else is saved, queued or scheduled.
- *
- * A continuation is the saved stack pointer of a suspended coroutine. It is
- * valid for exactly one resume.
+ * A continuation is opaque to the caller and valid for exactly one resume.
+ * The selected implementation only transfers execution between stacks;
+ * scheduling and per-context host state live above this interface.
  */
 typedef void *nsi_coro_t;
 

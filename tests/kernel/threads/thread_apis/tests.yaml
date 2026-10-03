@@ -31,3 +31,13 @@ tests:
       - native_sim
     extra_configs:
       - CONFIG_NATIVE_SIMULATOR_NCT_BACKEND_COROUTINES=y
+  kernel.threads.apis.native_sim_ucontext:
+    min_flash: 34
+    platform_allow:
+      - native_sim
+      - native_sim/native/64
+    integration_platforms:
+      - native_sim
+    extra_configs:
+      - CONFIG_NATIVE_SIMULATOR_NCT_BACKEND_COROUTINES=y
+      - CONFIG_NATIVE_SIMULATOR_COROUTINE_IMPLEMENTATION_UCONTEXT=y
