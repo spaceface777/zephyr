@@ -50,7 +50,7 @@ NSI_EXTRA_LIBS?=
 # Each side is selected independently. pthreads remain the default.
 NSI_NCE_BACKEND?=pthreads
 NSI_NCT_BACKEND?=pthreads
-# Stackful coroutine primitive: asm, ucontext or boost
+# Stackful coroutine primitive: asm, ucontext, longjmp or boost
 NSI_CORO_BACKEND?=asm
 # Used only by the Boost.Context primitive.
 NSI_BOOST_CONTEXT_INCLUDES?=
@@ -125,11 +125,13 @@ ifneq ($(filter coroutines,${NSI_NCE_BACKEND} ${NSI_NCT_BACKEND}),)
     SRCS+=${NSI_PATH}common/coro/nsi_coro.S
   else ifeq (${NSI_CORO_BACKEND},ucontext)
     SRCS+=${NSI_PATH}common/coro/nsi_coro_ucontext.c
+  else ifeq (${NSI_CORO_BACKEND},longjmp)
+    SRCS+=${NSI_PATH}common/coro/nsi_coro_longjmp.c
   else ifeq (${NSI_CORO_BACKEND},boost)
     SRCS+=${NSI_PATH}common/coro/nsi_coro_boost.cpp
     CORO_EXTRA_LIBS:=${NSI_BOOST_CONTEXT_LIB}
   else
-    $(error NSI_CORO_BACKEND must be asm, ucontext or boost, not "${NSI_CORO_BACKEND}")
+    $(error NSI_CORO_BACKEND must be asm, ucontext, longjmp or boost, not "${NSI_CORO_BACKEND}")
   endif
 endif
 
