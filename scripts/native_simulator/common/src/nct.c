@@ -60,7 +60,10 @@
 
 #define NCT_DEBUG_PRINTS 0
 
-/* For pthread_setname_np() */
+/* Expose pthread extensions used by the stack and thread-name helpers below. */
+#if defined(__APPLE__) && !defined(_DARWIN_C_SOURCE)
+#define _DARWIN_C_SOURCE
+#endif
 #undef _GNU_SOURCE
 #define _GNU_SOURCE
 #include <stdbool.h>
@@ -68,7 +71,6 @@
 #include <string.h>
 #include <stdint.h>
 #include <pthread.h>
-#include <semaphore.h>
 #include <errno.h>
 #if defined(_WIN32)
 #include <windows.h>
@@ -76,6 +78,7 @@
 #include "nsi_utils.h"
 #include "nct_if.h"
 #include "nsi_internal.h"
+#include "nsi_sem.h"
 #include "nsi_safe_call.h"
 
 #if NCT_DEBUG_PRINTS
@@ -101,10 +104,10 @@ struct threads_table_el {
 	/* Pointer to the overall status of the threading emulator instance */
 	struct nct_status_t *nct_status;
 	struct threads_table_el *next;	/* Pointer to the next element of the table */
-	sem_t sema;			/* Semaphore to hold this thread until allowed */
+	nsi_sem_t sema;		/* Semaphore to hold this thread until allowed */
 	pthread_t thread;		/* Actual pthread_t as returned by the native kernel */
 #if defined(_WIN32)
-	sem_t stack_ready;
+	nsi_sem_t stack_ready;
 	void *stack_addr;
 	size_t stack_size;
 	size_t stack_commit;
@@ -238,11 +241,11 @@ static void nct_exit_this_thread(void)
 /*
  * Wait for the semaphore, retrying if we are interrupted by a signal
  */
-NSI_INLINE int nct_sem_rewait(sem_t *semaphore)
+NSI_INLINE int nct_sem_rewait(nsi_sem_t *semaphore)
 {
 	int ret;
 
-	while (((ret = sem_wait(semaphore)) == -1) && (errno == EINTR)) {
+	while (((ret = nsi_sem_wait(semaphore)) == -1) && (errno == EINTR)) {
 		/* Restart wait if we were interrupted */
 	}
 	return ret;
@@ -298,7 +301,7 @@ static void nct_let_run(struct nct_status_t *this, int next_allowed_th)
 	NCT_DEBUG("%s: We let thread [%i] %i run\n", __func__, tt_el->thead_cnt, next_allowed_th);
 
 	this->currently_allowed_thread = next_allowed_th;
-	NSI_SAFE_CALL(sem_post(&tt_el->sema));
+	NSI_SAFE_CALL(nsi_sem_post(&tt_el->sema));
 }
 
 /**
@@ -379,7 +382,7 @@ static void *nct_thread_starter(void *arg_el)
 	tt_el->stack_addr = stack.addr;
 	tt_el->stack_size = stack.size;
 	tt_el->stack_win_error = stack.error;
-	NSI_SAFE_CALL(sem_post(&tt_el->stack_ready));
+	NSI_SAFE_CALL(nsi_sem_post(&tt_el->stack_ready));
 	if (tt_el->stack_error != 0) {
 		nct_exit_this_thread();
 	}
@@ -426,13 +429,13 @@ static void ttable_init_elements(struct threads_table_el *chunk, int size)
 {
 	for (int i = 0; i < size - 1; i++) {
 		chunk[i].next = &chunk[i+1];
-		NSI_SAFE_CALL(sem_init(&chunk[i].sema, 0, 0));
+		NSI_SAFE_CALL(nsi_sem_init(&chunk[i].sema, 0U));
 	}
 	chunk[size - 1].next = NULL;
-	NSI_SAFE_CALL(sem_init(&chunk[size - 1].sema, 0, 0));
+	NSI_SAFE_CALL(nsi_sem_init(&chunk[size - 1].sema, 0U));
 #if defined(_WIN32)
 	for (int i = 0; i < size; i++) {
-		NSI_SAFE_CALL(sem_init(&chunk[i].stack_ready, 0, 0));
+		NSI_SAFE_CALL(nsi_sem_init(&chunk[i].stack_ready, 0U));
 	}
 #endif
 }
@@ -579,6 +582,14 @@ void nct_get_thread_stack(void *this_arg, int thread_idx, void **stack_addr,
 #if defined(_WIN32)
 	*stack_addr = tt_el->stack_addr;
 	*stack_size = tt_el->stack_size;
+#elif defined(__APPLE__)
+	size_t stack_size_local;
+	void *stack_top;
+
+	stack_top = pthread_get_stackaddr_np(tt_el->thread);
+	stack_size_local = pthread_get_stacksize_np(tt_el->thread);
+	*stack_addr = (void *)((uintptr_t)stack_top - stack_size_local);
+	*stack_size = stack_size_local;
 #else
 	pthread_attr_t attr;
 	size_t stack_size_local;
@@ -674,7 +685,7 @@ void nct_clean_up(void *this_arg)
 		if (tt_el->state != USED) {
 			continue;
 		}
-		NSI_SAFE_CALL(sem_post(&tt_el->sema));
+		NSI_SAFE_CALL(nsi_sem_post(&tt_el->sema));
 	}
 #endif
 
@@ -720,7 +731,7 @@ void nct_abort_thread(void *this_arg, int thread_idx)
 
 		NCT_DEBUG("Aborting not scheduled thread [%i] %i\n", tt_el->thead_cnt, thread_idx);
 		tt_el->state = ABORTING;
-		NSI_SAFE_CALL(sem_post(&tt_el->sema));
+		NSI_SAFE_CALL(nsi_sem_post(&tt_el->sema));
 	}
 }
 
@@ -743,7 +754,16 @@ int nct_thread_name_set(void *this_arg, int thread_idx, const char *str)
 	struct nct_status_t *this = (struct nct_status_t *)this_arg;
 	struct threads_table_el *tt_el = ttable_get_element(this, thread_idx);
 
+#ifdef __APPLE__
+	/* Darwin can only name the calling thread */
+	if (pthread_equal(tt_el->thread, pthread_self()) == 0) {
+		return ENOTSUP;
+	}
+
+	return pthread_setname_np(str);
+#else
 	return pthread_setname_np(tt_el->thread, str);
+#endif
 }
 
 /*

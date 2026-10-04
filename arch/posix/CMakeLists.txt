@@ -6,8 +6,20 @@ endif()
 
 if(CMAKE_HOST_WIN32)
   include(windows.cmake)
-elseif(NOT CMAKE_HOST_UNIX OR CMAKE_HOST_APPLE)
-  message(FATAL_ERROR "The POSIX architecture only works on Linux. If on Windows or macOS "
+elseif(CMAKE_HOST_APPLE)
+  if(NOT NATIVE_SIM_EXPERIMENTAL_MACOS)
+    message(FATAL_ERROR "The POSIX architecture is only available on macOS when "
+            "NATIVE_SIM_EXPERIMENTAL_MACOS=ON is explicitly provided.")
+  endif()
+
+  if(NOT CONFIG_64BIT)
+    message(FATAL_ERROR "Experimental macOS POSIX support is currently limited to "
+            "native_sim/native/64.")
+  endif()
+elseif(NATIVE_SIM_EXPERIMENTAL_MACOS)
+  message(FATAL_ERROR "NATIVE_SIM_EXPERIMENTAL_MACOS is only supported on macOS hosts.")
+elseif(NOT CMAKE_HOST_UNIX)
+  message(FATAL_ERROR "The POSIX architecture only works on Linux. If on Windows "
           "consider using a virtual machine to run a Linux guest.")
 endif()
 
@@ -51,7 +63,9 @@ if(CMAKE_HOST_WIN32)
 elseif(NATIVE_TARGET_HOST) # Allow users to manually select the target for cross-compiling use cases
   set(TARGET_HOST ${NATIVE_TARGET_HOST})
 else()
-  if("${CMAKE_HOST_SYSTEM_PROCESSOR}" MATCHES "arm.*")
+  if("${CMAKE_HOST_SYSTEM_PROCESSOR}" MATCHES "(aarch64|arm64)")
+    set(TARGET_HOST "aarch64")
+  elseif("${CMAKE_HOST_SYSTEM_PROCESSOR}" MATCHES "arm.*")
     # All 32bit arm variants
     set(TARGET_HOST "arm")
   elseif("${CMAKE_HOST_SYSTEM_PROCESSOR}" MATCHES ".*86.*")
@@ -88,7 +102,8 @@ endif()
 
 # While doing the partial linking of the native library, some symbols will be missing
 # which are provided by the native simulator runner
-if(NOT CMAKE_HOST_WIN32)
+# Apple ld allows unresolved symbols in relocatable output by default.
+if(NOT CMAKE_HOST_APPLE AND NOT CMAKE_HOST_WIN32)
   zephyr_ld_options(-Wl,--unresolved-symbols=ignore-all)
 endif()
 

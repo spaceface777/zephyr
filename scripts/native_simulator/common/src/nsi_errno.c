@@ -33,7 +33,7 @@ static const struct nsi_errno_mid_map map[] = {
 	ERR(ENOMEM),
 	ERR(EACCES),
 	ERR(EFAULT),
-#if !defined(_WIN32)
+#ifdef ENOTBLK
 	ERR(ENOTBLK),
 #endif
 	ERR(EBUSY),
@@ -69,7 +69,7 @@ static const struct nsi_errno_mid_map map[] = {
 	ERR(ENAMETOOLONG),
 	ERR(ELOOP),
 	ERR(EOPNOTSUPP),
-#if !defined(_WIN32)
+#ifdef EPFNOSUPPORT
 	ERR(EPFNOSUPPORT),
 #endif
 	ERR(ECONNRESET),
@@ -78,7 +78,7 @@ static const struct nsi_errno_mid_map map[] = {
 	ERR(EPROTOTYPE),
 	ERR(ENOTSOCK),
 	ERR(ENOPROTOOPT),
-#if !defined(_WIN32)
+#ifdef ESHUTDOWN
 	ERR(ESHUTDOWN),
 #endif
 	ERR(ECONNREFUSED),
@@ -87,7 +87,7 @@ static const struct nsi_errno_mid_map map[] = {
 	ERR(ENETUNREACH),
 	ERR(ENETDOWN),
 	ERR(ETIMEDOUT),
-#if !defined(_WIN32)
+#ifdef EHOSTDOWN
 	ERR(EHOSTDOWN),
 #endif
 	ERR(EHOSTUNREACH),
@@ -96,14 +96,14 @@ static const struct nsi_errno_mid_map map[] = {
 	ERR(EDESTADDRREQ),
 	ERR(EMSGSIZE),
 	ERR(EPROTONOSUPPORT),
-#if !defined(_WIN32)
+#ifdef ESOCKTNOSUPPORT
 	ERR(ESOCKTNOSUPPORT),
 #endif
 	ERR(EADDRNOTAVAIL),
 	ERR(ENETRESET),
 	ERR(EISCONN),
 	ERR(ENOTCONN),
-#if !defined(_WIN32)
+#ifdef ETOOMANYREFS
 	ERR(ETOOMANYREFS),
 #endif
 	ERR(ENOTSUP),
