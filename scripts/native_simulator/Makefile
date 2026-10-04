@@ -75,6 +75,11 @@ NSI_WARNINGS?=-Wall -Wpedantic
 #  Preprocessor flags
 NSI_CPPFLAGS?=-D_POSIX_C_SOURCE=200809L -D_XOPEN_SOURCE=600 -D_XOPEN_SOURCE_EXTENDED
 
+HOST_OS:=$(shell uname -s)
+ifeq (${HOST_OS},Darwin)
+  NSI_CPPFLAGS+=-D_DARWIN_C_SOURCE
+endif
+
 NO_PIE_CO:=-fno-pie -fno-pic
 DEPENDFLAGS:=-MMD -MP
 CORO_BUILD_FLAGS:=
@@ -120,6 +125,10 @@ ifeq (${NSI_NCT_BACKEND},coroutines)
     ${NSI_PATH}common/coro/nct_coro.c
 endif
 ifneq ($(filter coroutines,${NSI_NCE_BACKEND} ${NSI_NCT_BACKEND}),)
+  ifeq (${HOST_OS},Darwin)
+    # Keep the C++ runtime optional, as with the ELF weak reference.
+    FINALLINK_FLAGS+=-Wl,-U,___cxa_get_globals
+  endif
   SRCS+=${NSI_PATH}common/coro/nsi_coro_ctx.c
   ifeq (${NSI_CORO_BACKEND},asm)
     SRCS+=${NSI_PATH}common/coro/nsi_coro.S
@@ -163,6 +172,12 @@ ${NSI_BUILD_PATH}:
 ${NSI_BUILD_PATH}/%.o: /%.c ${NSI_PATH}Makefile ${NSI_CONFIG_FILE}
 	@if [ ! -d $(dir $@) ]; then mkdir -p $(dir $@); fi
 	${NSI_CC} ${NSI_CPPFLAGS} ${INCLUDES} ${CFLAGS} -c $< -o $@
+
+ifeq (${HOST_OS},Darwin)
+# Apple's ucontext APIs are deprecated, but used by these experimental backends.
+${NSI_BUILD_PATH}/common/coro/nsi_coro_ucontext.o \
+${NSI_BUILD_PATH}/common/coro/nsi_coro_longjmp.o: CFLAGS+=-Wno-error=deprecated-declarations
+endif
 
 #Extra C++ sources build:
 ${NSI_BUILD_PATH}/%.o: /%.cpp ${NSI_PATH}Makefile ${NSI_CONFIG_FILE}
