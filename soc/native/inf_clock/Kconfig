@@ -117,6 +117,18 @@ config NATIVE_SIMULATOR_COROUTINE_IMPLEMENTATION_UCONTEXT
 	  library. This requires a host libc which still provides the historical
 	  ucontext API.
 
+config NATIVE_SIMULATOR_COROUTINE_IMPLEMENTATION_LONGJMP
+	bool "makecontext() and _longjmp()"
+	help
+	  Use makecontext() from the host C library to start each coroutine, and
+	  _setjmp()/_longjmp() for every later switch. Unlike swapcontext(), these
+	  do not save and restore the signal mask, so a switch makes no system call.
+
+	  This is not a supported use of longjmp(): no standard describes jumping
+	  to a frame on another stack, and it depends on how the C library
+	  implements jmp_buf. It is known to work with glibc, where it requires
+	  building that one file without _FORTIFY_SOURCE.
+
 config NATIVE_SIMULATOR_COROUTINE_IMPLEMENTATION_BOOST_CONTEXT
 	bool "Boost.Context fcontext"
 	help
