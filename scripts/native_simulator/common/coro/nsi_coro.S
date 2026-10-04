@@ -24,6 +24,19 @@
  * shadow stacks (x86 CET SHSTK).
  */
 
+/* Mach-O uses underscored symbols and has no ELF function metadata. */
+#ifdef __APPLE__
+#define nsi_coro_create _nsi_coro_create
+#define nsi_coro_switch _nsi_coro_switch
+#define nsi_coro_trampoline _nsi_coro_trampoline
+#define NSI_CORO_TYPE(symbol, kind)
+#define NSI_CORO_SIZE(symbol)
+	.subsections_via_symbols
+#else
+#define NSI_CORO_TYPE(symbol, kind) .type symbol, kind
+#define NSI_CORO_SIZE(symbol) .size symbol, . - symbol
+#endif
+
 	.text
 
 #if defined(__x86_64__)
@@ -36,7 +49,7 @@
 /* nsi_coro_t nsi_coro_create(void *stack_top (rdi), nsi_coro_entry_f entry (rsi)) */
 	.balign 16
 	.globl nsi_coro_create
-	.type nsi_coro_create, @function
+	NSI_CORO_TYPE(nsi_coro_create, @function)
 nsi_coro_create:
 	endbr64
 	/* After the 7 pops of the first switch, rsp is 16 byte aligned, as needed at a call */
@@ -53,12 +66,12 @@ nsi_coro_create:
 	movq	%rax, 0x30(%rdi)
 	movq	%rdi, %rax
 	ret
-	.size nsi_coro_create, . - nsi_coro_create
+	NSI_CORO_SIZE(nsi_coro_create)
 
 /* nsi_coro_t nsi_coro_switch(nsi_coro_t target (rdi)) */
 	.balign 16
 	.globl nsi_coro_switch
-	.type nsi_coro_switch, @function
+	NSI_CORO_TYPE(nsi_coro_switch, @function)
 nsi_coro_switch:
 	endbr64
 	pushq	%rbp
@@ -76,15 +89,15 @@ nsi_coro_switch:
 	popq	%rbx
 	popq	%rbp
 	ret
-	.size nsi_coro_switch, . - nsi_coro_switch
+	NSI_CORO_SIZE(nsi_coro_switch)
 
 	.balign 16
-	.type nsi_coro_trampoline, @function
+	NSI_CORO_TYPE(nsi_coro_trampoline, @function)
 nsi_coro_trampoline:
 	movq	%rax, %rdi			/* from */
 	call	*%rbx
 	ud2					/* the entry function must not return */
-	.size nsi_coro_trampoline, . - nsi_coro_trampoline
+	NSI_CORO_SIZE(nsi_coro_trampoline)
 
 #elif defined(__i386__)
 
@@ -96,7 +109,7 @@ nsi_coro_trampoline:
 /* nsi_coro_t nsi_coro_create(void *stack_top, nsi_coro_entry_f entry) */
 	.balign 16
 	.globl nsi_coro_create
-	.type nsi_coro_create, @function
+	NSI_CORO_TYPE(nsi_coro_create, @function)
 nsi_coro_create:
 	endbr32
 	movl	4(%esp), %eax			/* stack_top */
@@ -114,12 +127,12 @@ nsi_coro_create:
 	addl	$nsi_coro_trampoline - 1b, %edx
 	movl	%edx, 0x10(%eax)
 	ret
-	.size nsi_coro_create, . - nsi_coro_create
+	NSI_CORO_SIZE(nsi_coro_create)
 
 /* nsi_coro_t nsi_coro_switch(nsi_coro_t target) */
 	.balign 16
 	.globl nsi_coro_switch
-	.type nsi_coro_switch, @function
+	NSI_CORO_TYPE(nsi_coro_switch, @function)
 nsi_coro_switch:
 	endbr32
 	movl	4(%esp), %ecx
@@ -134,16 +147,16 @@ nsi_coro_switch:
 	popl	%ebx
 	popl	%ebp
 	ret
-	.size nsi_coro_switch, . - nsi_coro_switch
+	NSI_CORO_SIZE(nsi_coro_switch)
 
 	.balign 16
-	.type nsi_coro_trampoline, @function
+	NSI_CORO_TYPE(nsi_coro_trampoline, @function)
 nsi_coro_trampoline:
 	subl	$12, %esp			/* keep esp 16 byte aligned at the call */
 	pushl	%eax				/* from */
 	call	*%ebx
 	ud2					/* the entry function must not return */
-	.size nsi_coro_trampoline, . - nsi_coro_trampoline
+	NSI_CORO_SIZE(nsi_coro_trampoline)
 
 #elif defined(__aarch64__)
 
@@ -158,7 +171,7 @@ nsi_coro_trampoline:
 /* nsi_coro_t nsi_coro_create(void *stack_top (x0), nsi_coro_entry_f entry (x1)) */
 	.balign 16
 	.globl nsi_coro_create
-	.type nsi_coro_create, %function
+	NSI_CORO_TYPE(nsi_coro_create, %function)
 nsi_coro_create:
 	and	x0, x0, #~15
 	sub	x0, x0, #0xa0
@@ -171,16 +184,21 @@ nsi_coro_create:
 	stp	xzr, xzr, [x0, #0x60]
 	stp	xzr, xzr, [x0, #0x70]
 	stp	xzr, xzr, [x0, #0x80]
+#ifdef __APPLE__
+	adrp	x2, nsi_coro_trampoline@PAGE
+	add	x2, x2, nsi_coro_trampoline@PAGEOFF
+#else
 	adrp	x2, nsi_coro_trampoline
 	add	x2, x2, :lo12:nsi_coro_trampoline
+#endif
 	stp	xzr, x2,  [x0, #0x90]		/* x29 = 0, x30 = trampoline */
 	ret
-	.size nsi_coro_create, . - nsi_coro_create
+	NSI_CORO_SIZE(nsi_coro_create)
 
 /* nsi_coro_t nsi_coro_switch(nsi_coro_t target (x0)) */
 	.balign 16
 	.globl nsi_coro_switch
-	.type nsi_coro_switch, %function
+	NSI_CORO_TYPE(nsi_coro_switch, %function)
 nsi_coro_switch:
 	stp	d8,  d9,  [sp, #-0xa0]!
 	stp	d10, d11, [sp, #0x10]
@@ -207,17 +225,19 @@ nsi_coro_switch:
 	ldp	x29, x30, [sp, #0x90]
 	add	sp, sp, #0xa0
 	ret
-	.size nsi_coro_switch, . - nsi_coro_switch
+	NSI_CORO_SIZE(nsi_coro_switch)
 
 	.balign 16
-	.type nsi_coro_trampoline, %function
+	NSI_CORO_TYPE(nsi_coro_trampoline, %function)
 nsi_coro_trampoline:
 	blr	x19				/* x0 (from) is already the argument */
 	brk	#0				/* the entry function must not return */
-	.size nsi_coro_trampoline, . - nsi_coro_trampoline
+	NSI_CORO_SIZE(nsi_coro_trampoline)
 
 #else
 #error "The coroutine CPU backend does not support this host architecture"
 #endif
 
+#ifndef __APPLE__
 	.section .note.GNU-stack, "", %progbits
+#endif
