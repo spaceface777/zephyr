@@ -12,7 +12,11 @@
  */
 
 #include <stdint.h>
+#include <stdbool.h>
 #include <signal.h>
+#if defined(_WIN32)
+#include <windows.h>
+#endif
 #include <stddef.h>
 #include <inttypes.h>
 #include "nsi_tracing.h"
@@ -32,6 +36,37 @@ static unsigned int number_of_events;
 static unsigned int next_timer_index;
 static uint64_t next_timer_time;
 
+#if defined(_WIN32)
+static LONG signaled_end;
+static bool console_handler_registered;
+
+static BOOL WINAPI nsi_hws_console_handler(DWORD event)
+{
+	if (event != CTRL_C_EVENT && event != CTRL_BREAK_EVENT) {
+		return FALSE;
+	}
+
+	/* The console callback runs on another host thread.
+	 * A second request uses the default handler;
+	 * only the hardware loop may perform graceful cleanup.
+	 */
+	return InterlockedExchange(&signaled_end, 1) == 0;
+}
+
+static void nsi_hws_set_sig_handler(void)
+{
+	if (SetConsoleCtrlHandler(nsi_hws_console_handler, TRUE) == 0) {
+		nsi_print_error_and_exit("Cannot install console handler: Windows error %lu\n",
+					GetLastError());
+	}
+	console_handler_registered = true;
+}
+
+static bool nsi_hws_end_requested(void)
+{
+	return InterlockedCompareExchange(&signaled_end, 0, 0) != 0;
+}
+#else
 /* Have we received a SIGTERM or SIGINT */
 static volatile sig_atomic_t signaled_end;
 
@@ -71,6 +106,11 @@ static void nsi_hws_set_sig_handler(void)
 	NSI_SAFE_CALL(sigaction(SIGINT, &act, NULL));
 }
 
+static bool nsi_hws_end_requested(void)
+{
+	return signaled_end != 0;
+}
+#endif
 
 static void nsi_hws_sleep_until_next_event(void)
 {
@@ -86,7 +126,7 @@ static void nsi_hws_sleep_until_next_event(void)
 		/* LCOV_EXCL_STOP */
 	}
 
-	if (signaled_end || (nsi_simu_time >= end_of_time)) {
+	if (nsi_hws_end_requested() || (nsi_simu_time >= end_of_time)) {
 		nsi_print_trace("\nStopped at %.3Lfs\n",
 				((long double)nsi_simu_time)/1.0e6L);
 		nsi_exit(0);
@@ -163,5 +203,14 @@ void nsi_hws_init(void)
  */
 void nsi_hws_cleanup(void)
 {
-	/* Nothing to be done so far */
+#if defined(_WIN32)
+	if (console_handler_registered) {
+		if (SetConsoleCtrlHandler(nsi_hws_console_handler, FALSE) == 0) {
+			nsi_print_warning("Cannot remove console handler: Windows error %lu\n",
+					  GetLastError());
+		} else {
+			console_handler_registered = false;
+		}
+	}
+#endif
 }

@@ -21,6 +21,7 @@
 #include "nsi_hw_scheduler.h"
 #include "nsi_config.h"
 #include "nsi_cpu_ctrl.h"
+#include "nsi_tracing.h"
 
 int nsi_exit_inner(int exit_code)
 {
@@ -58,14 +59,19 @@ NSI_FUNC_NORETURN void nsi_exit(int exit_code)
  */
 void nsi_init(int argc, char *argv[])
 {
-	/*
-	 * Let's ensure that even if we are redirecting to a file, we get stdout
-	 * and stderr line buffered (default for console)
-	 * Note that glibc ignores size. But just in case we set a reasonable
-	 * number in case somebody tries to compile against a different library
+	/* UCRT treats line buffering as full buffering. Disable buffering on
+	 * Windows so output is visible before exit. Other hosts use line
+	 * buffering even when output is redirected to a file.
 	 */
+#if defined(_WIN32)
+	if (setvbuf(stdout, NULL, _IONBF, 0) != 0 ||
+	    setvbuf(stderr, NULL, _IONBF, 0) != 0) {
+		nsi_print_error_and_exit("Cannot disable standard I/O buffering\n");
+	}
+#else
 	setvbuf(stdout, NULL, _IOLBF, 512);
 	setvbuf(stderr, NULL, _IOLBF, 512);
+#endif
 
 	nsi_run_tasks(NSITASK_PRE_BOOT_1_LEVEL);
 	for (int i = 0; i < NSI_N_CPUS; i++) {
