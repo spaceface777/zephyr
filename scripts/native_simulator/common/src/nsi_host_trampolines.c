@@ -26,10 +26,12 @@ void nsi_host_free(void *ptr)
 	free(ptr);
 }
 
+#if !defined(_WIN32)
 int nsi_host_fsync(int fd)
 {
 	return fsync(fd);
 }
+#endif
 
 int nsi_host_ftruncate(int fd, long long length)
 {
@@ -61,10 +63,12 @@ int nsi_host_open(const char *pathname, int flags)
 	return open(pathname, flags);
 }
 
+#if !defined(_WIN32)
 long nsi_host_random(void)
 {
 	return random();
 }
+#endif
 
 long nsi_host_read(int fd, void *buffer, unsigned long size)
 {
@@ -76,6 +80,7 @@ void *nsi_host_realloc(void *ptr, unsigned long size)
 	return realloc(ptr, size);
 }
 
+#if !defined(_WIN32)
 int nsi_host_setenv(const char *name, const char *value, int overwrite)
 {
 	return setenv(name, value, overwrite);
@@ -85,6 +90,7 @@ void nsi_host_srandom(unsigned int seed)
 {
 	srandom(seed);
 }
+#endif
 
 char *nsi_host_strdup(const char *s)
 {
