@@ -40,6 +40,10 @@ macro(configure_linker_script linker_script_gen linker_pass_define)
     )
   else()
     set(template_script_defines ${linker_pass_define})
+    if(CMAKE_HOST_WIN32 AND CONFIG_ARCH_POSIX)
+      # -undef removes the target macro needed for COFF C-symbol decoration.
+      list(APPEND template_script_defines _WIN32)
+    endif()
     list(TRANSFORM template_script_defines PREPEND "-D")
 
     # Only Ninja and Makefile generators support DEPFILE.
@@ -134,6 +138,54 @@ function(toolchain_ld_link_elf)
 
     ${TOOLCHAIN_LD_LINK_ELF_DEPENDENCIES}
   )
+
+  if(CMAKE_HOST_WIN32 AND CONFIG_ARCH_POSIX)
+    # Preserve original weak-external metadata for the runner's COFF localization.
+    set(coff_target "${TOOLCHAIN_LD_LINK_ELF_TARGET_ELF}")
+    set(coff_inputs "$<JOIN:$<TARGET_OBJECTS:${coff_target}>,\n>\n")
+    string(APPEND coff_inputs "$<JOIN:$<TARGET_OBJECTS:${OFFSETS_LIB}>,\n>\n")
+    set(coff_pending ${WHOLE_ARCHIVE_LIBS} ${NO_WHOLE_ARCHIVE_LIBS}
+      ${TOOLCHAIN_LD_LINK_ELF_LIBRARIES_PRE_SCRIPT}
+      ${TOOLCHAIN_LD_LINK_ELF_LIBRARIES_POST_SCRIPT}
+      ${TOOLCHAIN_LD_LINK_ELF_DEPENDENCIES}
+    )
+    set(coff_seen)
+    while(coff_pending)
+      list(POP_FRONT coff_pending input)
+      if(input MATCHES "^\\$<LINK_ONLY:([^>]+)>$")
+        set(input "${CMAKE_MATCH_1}")
+      endif()
+      # Cross-directory target references contain CMake directory-scope markers.
+      if(input MATCHES "^::@" OR input IN_LIST coff_seen)
+        continue()
+      endif()
+      list(APPEND coff_seen "${input}")
+      if(TARGET "${input}")
+        get_target_property(input_type "${input}" TYPE)
+        if(input_type STREQUAL "OBJECT_LIBRARY")
+          string(APPEND coff_inputs "$<JOIN:$<TARGET_OBJECTS:${input}>,\n>\n")
+        elseif(input_type STREQUAL "STATIC_LIBRARY")
+          string(APPEND coff_inputs "$<TARGET_FILE:${input}>\n")
+        elseif(NOT input_type STREQUAL "INTERFACE_LIBRARY")
+          message(FATAL_ERROR "Unsupported Windows embedded target: ${input} (${input_type})")
+        endif()
+        foreach(property LINK_LIBRARIES INTERFACE_LINK_LIBRARIES)
+          get_target_property(dependencies "${input}" "${property}")
+          if(dependencies)
+            list(APPEND coff_pending ${dependencies})
+          endif()
+        endforeach()
+      elseif(IS_ABSOLUTE "${input}")
+        string(APPEND coff_inputs "${input}\n")
+      elseif(input MATCHES "^(-|\\$<)")
+        # Ignore compiler/linker flags
+        continue()
+      elseif(NOT input STREQUAL "")
+        message(FATAL_ERROR "Unsupported Windows embedded link input: ${input}")
+      endif()
+    endwhile()
+    file(GENERATE OUTPUT "$<TARGET_FILE:${coff_target}>.coff-inputs" CONTENT "${coff_inputs}")
+  endif()
 endfunction(toolchain_ld_link_elf)
 
 # Function for finalizing link setup after Zephyr configuration has completed.
