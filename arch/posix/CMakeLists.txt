@@ -1,6 +1,12 @@
 # SPDX-License-Identifier: Apache-2.0
 
-if(NOT CMAKE_HOST_UNIX OR CMAKE_HOST_APPLE)
+if(NATIVE_SIM_EXPERIMENTAL_WINDOWS AND NOT CMAKE_HOST_WIN32)
+  message(FATAL_ERROR "Experimental Windows native_sim builds require a Windows host.")
+endif()
+
+if(CMAKE_HOST_WIN32)
+  include(windows.cmake)
+elseif(NOT CMAKE_HOST_UNIX OR CMAKE_HOST_APPLE)
   message(FATAL_ERROR "The POSIX architecture only works on Linux. If on Windows or macOS "
           "consider using a virtual machine to run a Linux guest.")
 endif()
@@ -39,7 +45,10 @@ set_property(TARGET native_simulator PROPERTY LOCALIZE_EXTRA_OPTIONS "")
 
 set(NSI_DIR ${ZEPHYR_BASE}/scripts/native_simulator CACHE PATH "Path to the native simulator")
 
-if(NATIVE_TARGET_HOST) # Allow users to manually select the target for cross-compiling use cases
+if(CMAKE_HOST_WIN32)
+  # Always target i686 to avoid ABI incompatibilities with Windows' LLP64 data model.
+  set(TARGET_HOST "x86_64")
+elseif(NATIVE_TARGET_HOST) # Allow users to manually select the target for cross-compiling use cases
   set(TARGET_HOST ${NATIVE_TARGET_HOST})
 else()
   if("${CMAKE_HOST_SYSTEM_PROCESSOR}" MATCHES "arm.*")
@@ -73,15 +82,15 @@ endif()
 # (i.e. not linkable anymore from outside that embedded code library).
 # If users want to be able to link to a symbol from outside the embedded image, they should annotate
 # it with one of NATIVE_SIMULATOR_IF*
-zephyr_compile_options(
-  -fvisibility=hidden
-)
+if(NOT CMAKE_HOST_WIN32)
+  zephyr_compile_options(-fvisibility=hidden)
+endif()
 
 # While doing the partial linking of the native library, some symbols will be missing
 # which are provided by the native simulator runner
-zephyr_ld_options(
-  -Wl,--unresolved-symbols=ignore-all
-)
+if(NOT CMAKE_HOST_WIN32)
+  zephyr_ld_options(-Wl,--unresolved-symbols=ignore-all)
+endif()
 
 if(NOT CONFIG_EXTERNAL_LIBC)
   # Get the *compiler* include path, that is where the *compiler* provided headers are (not the
