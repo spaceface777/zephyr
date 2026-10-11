@@ -19,6 +19,9 @@ import sys
 from elftools.elf.elffile import ELFFile
 from elftools.elf.sections import SymbolTableSection
 
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "pylib", "build_helpers"))
+from coff_parser import CoffFile  # noqa: E402
+
 
 def get_symbol_table(obj):
     for section in obj.iter_sections():
@@ -42,6 +45,20 @@ def gen_offset_header(input_file, output_file):
 #ifndef {include_guard}
 #define {include_guard}\n\n"""
     )
+
+    magic = input_file.read(2)
+    input_file.seek(0)
+    if magic == b"\x4c\x01":
+        coff = CoffFile(input_file.read())
+        for symbol in coff.symbols.values():
+            if (
+                symbol.section_index == -1
+                and symbol.storage == 2
+                and symbol.name.endswith(("_OFFSET", "_SIZEOF"))
+            ):
+                output_file.write(f"#define {symbol.name} 0x{symbol.value:x}\n")
+        output_file.write(f"\n#endif /* {include_guard} */\n")
+        return 0
 
     obj = ELFFile(input_file)
     for sym in get_symbol_table(obj).iter_symbols():

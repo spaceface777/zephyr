@@ -208,10 +208,16 @@ do {                                                                    \
 				"." Z_STRINGIFY(c))))
 #define __in_section(a, b, c) ___in_section(a, b, c)
 
+#if defined(CONFIG_ARCH_POSIX) && defined(_WIN32)
+/* COFF GAS cannot parse file paths in unquoted section names. */
+#define ___in_section_unique(a, b) \
+	__attribute__((section("." Z_STRINGIFY(a) "." Z_STRINGIFY(b))))
+#else
 #define ___in_section_unique(a, b) \
 	__attribute__((section("." Z_STRINGIFY(a)		\
 				"." __FILE__			\
 				"." Z_STRINGIFY(b))))
+#endif
 
 #ifndef __in_section_unique
 #define __in_section_unique(seg) ___in_section_unique(seg, __COUNTER__)
@@ -584,6 +590,16 @@ do {                                                                    \
 	__asm__ __volatile__(".globl\t" #name                    \
 		"\n\t.equ\t" #name "," #value       \
 		"\n\t.type\t" #name ",%object")
+
+#elif defined(CONFIG_ARCH_POSIX) && defined(_WIN32)
+
+#define GEN_ABSOLUTE_SYM(name, value)               \
+	__asm__ __volatile__(".globl\t" #name "\n\t.equ\t" #name \
+		",%c0" : : "n"(value))
+
+#define GEN_ABSOLUTE_SYM_KCONFIG(name, value)       \
+	__asm__ __volatile__(".globl\t" #name "\n\t.equ\t" #name \
+		"," #value)
 
 #elif defined(CONFIG_ARC) || defined(CONFIG_ARM64) \
 	|| defined(CONFIG_ARCH_POSIX) /*&& (__x86_64 or __i*86 or __aarch64__)*/ \

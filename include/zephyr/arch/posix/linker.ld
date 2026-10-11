@@ -71,7 +71,7 @@ SECTION_DATA_PROLOGUE(_DATA_SECTION_NAME,,)
  */
 #include <snippets-data-sections.ld>
 
-__data_region_end = .;
+PLACE_SYMBOL_HERE(__data_region_end);
 
 SECTION_DATA_PROLOGUE(_NOINIT_SECTION_NAME,,)
 {

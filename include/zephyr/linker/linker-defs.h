@@ -46,11 +46,12 @@
 #include <zephyr/devicetree.h>
 #endif
 
-/* The GCC for Renesas RX processors adds leading underscores to C-symbols
- * by default. As a workaround for symbols defined in linker scripts to be
- * available in C code, an alias with a leading underscore has to be provided.
+/* Renesas RX and i386 MinGW add leading underscores to C symbols. Provide
+ * matching aliases for symbols defined in linker scripts.
  */
-#if defined(CONFIG_RX)
+#if defined(CONFIG_ARCH_POSIX) && defined(_WIN32)
+#define PLACE_SYMBOL_HERE(symbol) symbol = .; _CONCAT(_, symbol) = symbol
+#elif defined(CONFIG_RX)
 #define PLACE_SYMBOL_HERE(symbol)                                                                  \
 	symbol = .;                                                                                \
 	PROVIDE(_CONCAT(_, symbol) = symbol)
