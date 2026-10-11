@@ -113,6 +113,11 @@ static uint64_t last_radj_stime;
 /* Set in real time mode. Note this can only be called before HW_INIT */
 void hwtimer_set_real_time_mode(bool new_rt)
 {
+#if defined(_WIN32)
+	if (new_rt) {
+		nsi_print_error_and_exit("Real-time pacing is not supported on Windows\n");
+	}
+#endif
 	if (hw_timer_rt_timer) {
 		nsi_print_warning("%s: can't be called after init. Ignored\n", __func__);
 	} else {
@@ -122,6 +127,9 @@ void hwtimer_set_real_time_mode(bool new_rt)
 
 void hwtimer_set_rt_period(uint64_t period)
 {
+#if defined(_WIN32)
+	nsi_print_error_and_exit("Real-time pacing is not supported on Windows\n");
+#endif
 	rt_period = period;
 }
 
@@ -385,6 +393,9 @@ void hwtimer_set_rtc_offset(int64_t offset)
  */
 void hwtimer_set_rt_ratio(double ratio)
 {
+#if defined(_WIN32)
+	nsi_print_error_and_exit("Real-time clock ratios are not supported on Windows\n");
+#endif
 	clock_ratio = ratio;
 }
 
