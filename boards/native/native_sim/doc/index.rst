@@ -59,6 +59,70 @@ To build, simply specify the ``native_sim`` board as target:
    :goals: build
    :compact:
 
+.. _native_sim_windows:
+
+Experimental Windows builds
+===========================
+
+The experimental Windows mode builds an i686 PE32 executable with the ILP32 data model.
+It requires a native Windows build host and the ``native_sim/native`` target.
+The experimental mode does not support Windows-64 binaries, ARM64 binaries, or MSVC.
+It does not support cross-compilation from Linux or macOS.
+Windows on Arm runs the i686 executable through x86 emulation.
+
+This mode uses one embedded CPU, the pthread NCE and NCT backends, and the host C library
+(:kconfig:option:`CONFIG_EXTERNAL_LIBC`).
+The selected MinGW compiler headers depend on its host C runtime.
+Other C library choices are not currently supported in this mode.
+Its scope is console output, simulated clock events, kernel scheduling, and clean exit.
+Real-time pacing, C++, entropy, file-backed devices, host networking, reboot, profiling, and
+sanitizers are outside this scope.
+The build does not change board defaults to disable these features.
+
+Build dependencies:
+
+* The normal :ref:`getting_started` prerequisites for native Windows, including
+  Python, CMake, Ninja, west, and the Zephyr Python dependencies.
+* An i686 MinGW toolchain.
+
+  * Tested: the standard `WinLibs <https://winlibs.com/>`_ Win32/i686 toolchain with POSIX threads,
+    DWARF exceptions, and UCRT: GCC 16.2.0, MinGW-w64 14.0.0, release 2.
+
+The runner uses CMake, Ninja, and Python. It does not require MSYS2, Cygwin,
+Git Bash, or GNU make. The Zephyr SDK ELF compiler cannot replace the Windows toolchain.
+
+Use paths without whitespace for the workspace, toolchain, and build directory.
+Put the native tools and the WinLibs ``bin`` directory in ``PATH``.
+When you run the executable, keep the WinLibs ``bin`` directory in ``PATH`` for its runtime DLLs.
+
+From a Windows command prompt in the Zephyr workspace, build Hello World:
+
+.. code-block:: bat
+
+   west build -b native_sim/native zephyr/samples/hello_world -d C:/build/native_sim -- ^
+     -GNinja -DZEPHYR_TOOLCHAIN_VARIANT=host ^
+     -DNATIVE_SIM_EXPERIMENTAL_WINDOWS=ON ^
+     -DCONFIG_NATIVE_SIM_SLOWDOWN_TO_REAL_TIME=n
+
+For a custom runner integration, configure with ``-DCONFIG_BUILD_OUTPUT_EXE=n``.
+Then build only the runner library:
+
+.. code-block:: bat
+
+   cmake --build C:/build/native_sim --target runner_lib
+
+The archive is ``C:/build/native_sim/zephyr/NSI/build/runner.a``.
+It contains only runner objects, not the embedded Zephyr image.
+The runner receives the ``native_simulator`` interface sources, include directories,
+and compile options in a separate CMake project.
+A custom final link must retain COFF localization, final garbage collection, and initialization checks.
+
+Run the executable with a simulation time limit:
+
+.. code-block:: bat
+
+   C:\build\native_sim\zephyr\zephyr.exe -stop_at=1
+
 Running
 =======
 

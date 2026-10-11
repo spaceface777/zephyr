@@ -63,11 +63,15 @@ This port is designed and tested to run in Linux.
 
 .. note::
 
-   To use it in Windows, you will need a Virtual Machine running a Linux guest.
+   For the Linux host implementation on Windows, use a virtual machine with a Linux guest.
    You can use WSL 2 (Windows Subsystem for Linux v2), or another VM running your preferred Linux
    distribution.
    Note: The old WSL 1 is very limited and cannot run 32-bit binaries like the default 32-bit
    native_sim build configuration.
+
+   The 32-bit native_sim target provides an
+   :ref:`experimental native Windows mode <native_sim_windows>`.
+   This mode supports fewer features than the Linux implementation.
 
 .. _posix_arch_limitations:
 
