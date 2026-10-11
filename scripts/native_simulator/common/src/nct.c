@@ -70,6 +70,9 @@
 #include <pthread.h>
 #include <semaphore.h>
 #include <errno.h>
+#if defined(_WIN32)
+#include <windows.h>
+#endif
 #include "nsi_utils.h"
 #include "nct_if.h"
 #include "nsi_internal.h"
@@ -100,6 +103,14 @@ struct threads_table_el {
 	struct threads_table_el *next;	/* Pointer to the next element of the table */
 	sem_t sema;			/* Semaphore to hold this thread until allowed */
 	pthread_t thread;		/* Actual pthread_t as returned by the native kernel */
+#if defined(_WIN32)
+	sem_t stack_ready;
+	void *stack_addr;
+	size_t stack_size;
+	size_t stack_commit;
+	int stack_error;
+	DWORD stack_win_error;
+#endif
 
 	int thread_idx;			/* Index of this element in the threads_table*/
 	int thead_cnt;			/* For debugging: Unique, consecutive, thread number */
@@ -129,6 +140,90 @@ struct nct_status_t {
 };
 
 static struct threads_table_el *ttable_get_element(struct nct_status_t *this, int index);
+
+#if defined(_WIN32)
+#define NCT_WINDOWS_STACK_BUDGET (2U * 1024U * 1024U)
+
+struct nct_windows_stack {
+	void *addr;
+	size_t size;
+	size_t guard_size;
+	size_t page_size;
+	DWORD error;
+};
+
+static int nct_read_stack(struct nct_windows_stack *stack, bool require_committed)
+{
+	NT_TIB *tib = (NT_TIB *)NtCurrentTeb();
+	MEMORY_BASIC_INFORMATION region;
+	SYSTEM_INFO info;
+	uintptr_t top = (uintptr_t)tib->StackBase;
+	uintptr_t bottom = 0U;
+	uintptr_t allocation;
+	size_t cushion = 0U;
+	size_t guards = 0U;
+	enum { CUSHION, GUARD, WRITABLE } phase = CUSHION;
+
+	GetSystemInfo(&info);
+	if (VirtualQuery(tib->StackLimit, &region, sizeof(region)) != sizeof(region)) {
+		stack->error = GetLastError();
+		return EIO;
+	}
+	allocation = (uintptr_t)region.AllocationBase;
+	if (allocation == 0U || top <= allocation || info.dwPageSize == 0U ||
+	    top % info.dwPageSize != 0U || allocation % info.dwPageSize != 0U) {
+		return ENOTSUP;
+	}
+
+	/* The creator supplies only a guard-size hint. Published child bounds
+	 * require full commitment above the guards and at most one overflow page.
+	 * A movable StackLimit alone is not safe for a kernel stack sentinel.
+	 */
+	for (uintptr_t addr = allocation; addr < top; addr += region.RegionSize) {
+		if (VirtualQuery((void *)addr, &region, sizeof(region)) != sizeof(region)) {
+			stack->error = GetLastError();
+			return EIO;
+		}
+		if (region.Type != MEM_PRIVATE || (uintptr_t)region.AllocationBase != allocation ||
+		    (uintptr_t)region.BaseAddress != addr || region.RegionSize == 0U ||
+		    region.RegionSize % info.dwPageSize != 0U || region.RegionSize > top - addr) {
+			return ENOTSUP;
+		}
+		if (phase == CUSHION &&
+		    (region.State == MEM_RESERVE ||
+		     (region.State == MEM_COMMIT && region.Protect == PAGE_NOACCESS))) {
+			cushion += region.RegionSize;
+			if (require_committed && cushion > info.dwPageSize) {
+				return ENOTSUP;
+			}
+		} else if (phase != WRITABLE && region.State == MEM_COMMIT &&
+			   region.Protect == (PAGE_READWRITE | PAGE_GUARD)) {
+			guards += region.RegionSize;
+			phase = GUARD;
+		} else if (phase != CUSHION && region.State == MEM_COMMIT &&
+			   region.Protect == PAGE_READWRITE) {
+			if (phase == GUARD) {
+				bottom = addr;
+			}
+			phase = WRITABLE;
+		} else {
+			return ENOTSUP;
+		}
+	}
+	if (phase != WRITABLE || (uintptr_t)tib->StackLimit < bottom ||
+	    (uintptr_t)tib->StackLimit >= top ||
+	    (require_committed && bottom != (uintptr_t)tib->StackLimit) ||
+	    (uintptr_t)&region < bottom || (uintptr_t)&region >= top) {
+		return ENOTSUP;
+	}
+
+	stack->addr = (void *)bottom;
+	stack->size = top - bottom;
+	stack->guard_size = guards;
+	stack->page_size = info.dwPageSize;
+	return 0;
+}
+#endif
 
 /**
  * Helper function, run by a thread which is being ended
@@ -276,6 +371,20 @@ static void *nct_thread_starter(void *arg_el)
 
 	NCT_DEBUG("Thread [%i] %i: %s: Starting\n", tt_el->thead_cnt, thread_idx, __func__);
 
+#if defined(_WIN32)
+	struct nct_windows_stack stack = {0};
+
+	/* Publish every discovery result before any exit path can abandon the creator. */
+	tt_el->stack_error = nct_read_stack(&stack, true);
+	tt_el->stack_addr = stack.addr;
+	tt_el->stack_size = stack.size;
+	tt_el->stack_win_error = stack.error;
+	NSI_SAFE_CALL(sem_post(&tt_el->stack_ready));
+	if (tt_el->stack_error != 0) {
+		nct_exit_this_thread();
+	}
+#endif
+
 	/*
 	 * The program may have been finished before this thread ever got to run
 	 */
@@ -321,6 +430,11 @@ static void ttable_init_elements(struct threads_table_el *chunk, int size)
 	}
 	chunk[size - 1].next = NULL;
 	NSI_SAFE_CALL(sem_init(&chunk[size - 1].sema, 0, 0));
+#if defined(_WIN32)
+	for (int i = 0; i < size; i++) {
+		NSI_SAFE_CALL(sem_init(&chunk[i].stack_ready, 0, 0));
+	}
+#endif
 }
 
 /*
@@ -411,10 +525,42 @@ int nct_new_thread(void *this_arg, void *payload)
 	tt_el->nct_status = this;
 	tt_el->thread_idx = t_slot;
 
+#if defined(_WIN32)
+	struct nct_windows_stack stack = {0};
+	pthread_attr_t attr;
+	int err = nct_read_stack(&stack, false);
+
+	if (err != 0 || stack.guard_size >= NCT_WINDOWS_STACK_BUDGET ||
+	    stack.page_size >= NCT_WINDOWS_STACK_BUDGET - stack.guard_size) {
+		nsi_print_error_and_exit("NCT: Cannot determine Windows stack guard headroom "
+					"(%i, Windows error %lu)\n", err, stack.error);
+	}
+	/* winpthreads requests initial commitment, not a reservation. Committing
+	 * the whole budget removes Windows' guard. The child validates the result.
+	 */
+	tt_el->stack_commit = NCT_WINDOWS_STACK_BUDGET - stack.guard_size - stack.page_size;
+	NSI_SAFE_CALL(pthread_attr_init(&attr));
+	err = pthread_attr_setstacksize(&attr, tt_el->stack_commit);
+	if (err == 0) {
+		err = pthread_create(&tt_el->thread, &attr, nct_thread_starter, tt_el);
+	}
+	NSI_SAFE_CALL(pthread_attr_destroy(&attr));
+	NSI_SAFE_CALL(err);
+	NSI_SAFE_CALL(nct_sem_rewait(&tt_el->stack_ready));
+	if (tt_el->stack_error != 0) {
+		nsi_print_error_and_exit("NCT: Windows stack discovery failed "
+					"(%i, Windows error %lu): "
+					"unsupported or partially committed stack; "
+					"requested %zu bytes\n",
+					tt_el->stack_error, tt_el->stack_win_error,
+					tt_el->stack_commit);
+	}
+#else
 	NSI_SAFE_CALL(pthread_create(&tt_el->thread,
 				  NULL,
 				  nct_thread_starter,
 				  (void *)tt_el));
+#endif
 
 	NCT_DEBUG("%s created thread [%i] %i [%lu]\n",
 		  __func__, tt_el->thead_cnt, t_slot, tt_el->thread);
@@ -430,6 +576,10 @@ void nct_get_thread_stack(void *this_arg, int thread_idx, void **stack_addr,
 {
 	struct nct_status_t *this = (struct nct_status_t *)this_arg;
 	struct threads_table_el *tt_el = ttable_get_element(this, thread_idx);
+#if defined(_WIN32)
+	*stack_addr = tt_el->stack_addr;
+	*stack_size = tt_el->stack_size;
+#else
 	pthread_attr_t attr;
 	size_t stack_size_local;
 
@@ -440,6 +590,7 @@ void nct_get_thread_stack(void *this_arg, int thread_idx, void **stack_addr,
 	*stack_size = stack_size_local;
 
 	NSI_SAFE_CALL(pthread_attr_destroy(&attr));
+#endif
 }
 
 /**
