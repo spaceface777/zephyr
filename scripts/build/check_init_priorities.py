@@ -30,6 +30,8 @@ from elftools.elf.sections import SymbolTableSection
 
 # This is needed to load edt.pickle files.
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "dts", "python-devicetree", "src"))
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "pylib", "build_helpers"))
+from coff_parser import CoffFile  # noqa: E402
 from devicetree import edtlib  # noqa: F401
 
 # Prefix used for "struct device" reference initialized based on devicetree
@@ -110,9 +112,16 @@ class ZephyrInitLevels:
         file_path: path of the file to be loaded.
     """
 
+    _pe = None
+
     def __init__(self, file_path, elf_file):
         self.file_path = file_path
-        self._elf = ELFFile(elf_file)
+        magic = elf_file.read(2)
+        elf_file.seek(0)
+        if magic == b"MZ":
+            self._pe = CoffFile(elf_file.read())
+        else:
+            self._elf = ELFFile(elf_file)
         self._load_objects()
         self._load_level_addr()
         self._process_initlevels()
@@ -121,6 +130,28 @@ class ZephyrInitLevels:
         """Initialize the object table."""
         self._objects = {}
         self._object_addr = {}
+
+        if self._pe is not None:
+            boundaries = {f"__init_{level}_start" for level in _DEVICE_INIT_LEVELS}
+            boundaries.add("__init_end")
+            self._pe_functions = set()
+            for symbol in self._pe.symbols.values():
+                if symbol.section_index <= 0 or symbol.storage not in (2, 3):
+                    continue
+                section = self._pe.sections[symbol.section_index]
+                if not symbol.name.startswith("_") or symbol.name == section.name:
+                    continue
+                name = symbol.name[1:]
+                address = self._pe.address(symbol)
+                self._object_addr[name] = address
+                if symbol.type & 0x30 == 0x20:
+                    self._pe_functions.add(address)
+                if name in boundaries:
+                    continue
+                old = self._objects.get(address)
+                if old is None or name.startswith(("__init_", _DEVICE_ORD_PREFIX)):
+                    self._objects[address] = (name, 0, symbol.section_index)
+            return
 
         for section in self._elf.iter_sections():
             if not isinstance(section, SymbolTableSection):
@@ -142,6 +173,17 @@ class ZephyrInitLevels:
     def _load_level_addr(self):
         """Find the address associated with known init levels."""
         self._init_level_addr = {}
+
+        if self._pe is not None:
+            for level in _DEVICE_INIT_LEVELS:
+                name = f"__init_{level}_start"
+                if name not in self._object_addr:
+                    raise ValueError(f"Missing PE32 initialization boundary: {name}")
+                self._init_level_addr[level] = self._object_addr[name]
+            if "__init_end" not in self._object_addr:
+                raise ValueError("Missing PE32 initialization end symbol")
+            self._init_level_end = self._object_addr["__init_end"]
+            return
 
         for section in self._elf.iter_sections():
             if not isinstance(section, SymbolTableSection):
@@ -181,6 +223,8 @@ class ZephyrInitLevels:
             return "unknown"
 
     def _initlevel_pointer(self, addr, idx, shidx):
+        if self._pe is not None:
+            return self._pe.read_pointer(addr, idx, shidx)
         elfclass = self._elf.elfclass
         if elfclass == 32:
             ptrsize = 4
@@ -214,17 +258,42 @@ class ZephyrInitLevels:
 
             self.initlevels[level] = []
 
+            # PE32 init_entry contains exactly two four-byte pointers. COFF
+            # symbols have no object sizes; padding must not become an entry.
+            if self._pe is not None and (stop < start or (stop - start) % 8 != 0):
+                raise ValueError(f"Invalid PE32 initialization range for {level}")
             priority = 0
             addr = start
             while addr < stop:
                 if addr not in self._objects:
                     raise ValueError(f"no symbol at addr {addr:08x}")
                 obj, size, shidx = self._objects[addr]
+                if self._pe is not None:
+                    if not obj.startswith("__init_"):
+                        raise ValueError(f"Missing PE32 initialization entry at {addr:08x}")
+                    size = 8
 
-                arg0_name = self._object_name(self._initlevel_pointer(addr, 0, shidx))
-                arg1_name = self._object_name(self._initlevel_pointer(addr, 1, shidx))
+                arg0 = self._initlevel_pointer(addr, 0, shidx)
+                arg1 = self._initlevel_pointer(addr, 1, shidx)
+                arg0_name = self._object_name(arg0)
+                arg1_name = self._object_name(arg1)
 
                 ordinal = self._device_ord_from_name(arg1_name)
+                if self._pe is not None:
+                    if arg1 != 0:
+                        # DEVICE_DEFINE objects have names but no devicetree ordinal.
+                        if (
+                            arg0 != 0
+                            or not arg1_name.startswith("__device_")
+                            or arg1 in self._pe_functions
+                        ):
+                            raise ValueError(f"Invalid PE32 device entry at {addr:08x}")
+                        device_section = self._objects[arg1][2]
+                        init_fn = self._initlevel_pointer(arg1, DEVICE_INIT_OFFSET, device_section)
+                        if init_fn != 0 and init_fn not in self._pe_functions:
+                            raise ValueError(f"Invalid PE32 device init function at {arg1:08x}")
+                    elif arg0 not in self._pe_functions:
+                        raise ValueError(f"Invalid PE32 init function at {addr:08x}")
                 if ordinal:
                     dev_addr = self._object_addr[arg1_name]
                     _, _, shidx = self._objects[dev_addr]
