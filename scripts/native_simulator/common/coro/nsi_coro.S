@@ -19,27 +19,123 @@
  * continuation of the switching coroutine as argument. Saved frame pointers
  * are 0 so unwinders stop at the bottom of a coroutine stack.
  *
- * Supported: x86-64 (System V ABI), i386 (System V ABI), AArch64 (AAPCS64).
+ * Supported: x86-64 (System V ABI), i386 (System V ABI), i386 Windows,
+ * AArch64 (AAPCS64).
  * The switch returns with a plain ret, so it is not compatible with hardware
  * shadow stacks (x86 CET SHSTK).
  */
 
-/* Mach-O uses underscored symbols and has no ELF function metadata. */
-#ifdef __APPLE__
+/* Mach-O and i386 PE use underscored symbols and have no ELF function metadata. */
+#if defined(__APPLE__) || defined(_WIN32)
 #define nsi_coro_create _nsi_coro_create
 #define nsi_coro_switch _nsi_coro_switch
 #define nsi_coro_trampoline _nsi_coro_trampoline
 #define NSI_CORO_TYPE(symbol, kind)
 #define NSI_CORO_SIZE(symbol)
-	.subsections_via_symbols
 #else
 #define NSI_CORO_TYPE(symbol, kind) .type symbol, kind
 #define NSI_CORO_SIZE(symbol) .size symbol, . - symbol
 #endif
+#ifdef __APPLE__
+	.subsections_via_symbols
+#endif
 
 	.text
 
-#if defined(__x86_64__)
+#if defined(_WIN32) && !defined(__i386__)
+#error "The coroutine CPU backend supports only i386 on Windows"
+
+#elif defined(_WIN32)
+
+#include "nsi_coro.h"
+
+/*
+ * Windows describes the running stack in the thread information block
+ * (NT_TIB). The SEH dispatcher and GetCurrentThreadStackLimits() use it, so
+ * the switch exchanges the ExceptionList, StackBase, StackLimit and
+ * DeallocationStack fields together with the callee-saved registers.
+ *
+ * Saved frame, lowest address first:
+ * 0x00 DeallocationStack (fs:0xe0c), 0x04 StackLimit (fs:0x08),
+ * 0x08 StackBase (fs:0x04), 0x0c ExceptionList (fs:0x00),
+ * 0x10 edi, 0x14 esi, 0x18 ebx, 0x1c ebp, 0x20 return address
+ *
+ * nsi_coro_create() also writes a final SEH registration record at the top of
+ * the new stack. It uses the handler of the creator's last record, which is
+ * the handler Windows installed for the thread, so exception chain validation
+ * finds the expected end.
+ */
+
+/* nsi_coro_t nsi_coro_create(void *stack_top, nsi_coro_entry_f entry) */
+	.balign 16
+	.globl nsi_coro_create
+nsi_coro_create:
+	movl	4(%esp), %ecx			/* stack_top */
+	movl	%ecx, %eax
+	andl	$-16, %eax
+	subl	$16, %eax			/* final SEH record */
+	movl	%fs:0x00, %edx
+	cmpl	$-1, %edx
+	je	3f				/* no chain: the new one stays empty */
+1:	cmpl	$-1, 0x00(%edx)
+	je	2f
+	movl	0x00(%edx), %edx
+	jmp	1b
+2:	movl	0x04(%edx), %edx
+	movl	$-1, 0x00(%eax)
+	movl	%edx, 0x04(%eax)
+	movl	%eax, %edx			/* ExceptionList of the new stack */
+3:	/* After the 9 pops of the first switch, esp is 16 byte aligned at the call */
+	subl	$52, %eax
+	movl	%edx, 0x0c(%eax)
+	movl	%ecx, 0x08(%eax)		/* StackBase */
+	subl	$NSI_CORO_STACK_SIZE, %ecx
+	movl	%ecx, 0x04(%eax)		/* StackLimit */
+	movl	%ecx, 0x00(%eax)		/* DeallocationStack */
+	movl	$0, 0x10(%eax)
+	movl	$0, 0x14(%eax)
+	movl	8(%esp), %edx
+	movl	%edx, 0x18(%eax)		/* ebx = entry */
+	movl	$0, 0x1c(%eax)			/* ebp = 0 */
+	call	4f
+4:	popl	%edx
+	addl	$nsi_coro_trampoline - 4b, %edx
+	movl	%edx, 0x20(%eax)
+	ret
+
+/* nsi_coro_t nsi_coro_switch(nsi_coro_t target) */
+	.balign 16
+	.globl nsi_coro_switch
+nsi_coro_switch:
+	movl	4(%esp), %ecx
+	pushl	%ebp
+	pushl	%ebx
+	pushl	%esi
+	pushl	%edi
+	pushl	%fs:0x00
+	pushl	%fs:0x04
+	pushl	%fs:0x08
+	pushl	%fs:0xe0c
+	movl	%esp, %eax			/* our continuation is the return value */
+	movl	%ecx, %esp
+	popl	%fs:0xe0c
+	popl	%fs:0x08
+	popl	%fs:0x04
+	popl	%fs:0x00
+	popl	%edi
+	popl	%esi
+	popl	%ebx
+	popl	%ebp
+	ret
+
+	.balign 16
+nsi_coro_trampoline:
+	subl	$12, %esp			/* keep esp 16 byte aligned at the call */
+	pushl	%eax				/* from */
+	call	*%ebx
+	ud2					/* the entry function must not return */
+
+#elif defined(__x86_64__)
 
 /*
  * Saved frame, lowest address first:
@@ -238,6 +334,6 @@ nsi_coro_trampoline:
 #error "The coroutine CPU backend does not support this host architecture"
 #endif
 
-#ifndef __APPLE__
+#if !defined(__APPLE__) && !defined(_WIN32)
 	.section .note.GNU-stack, "", %progbits
 #endif

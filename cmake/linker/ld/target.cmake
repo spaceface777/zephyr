@@ -178,7 +178,8 @@ function(toolchain_ld_link_elf)
       elseif(IS_ABSOLUTE "${input}")
         string(APPEND coff_inputs "${input}\n")
       elseif(input MATCHES "^(-|\\$<)")
-        # Ignore compiler/linker flags
+        # Compiler/linker flags carry no COFF records. Missing weak provenance
+        # from a library hidden in a generator expression fails in the helper.
         continue()
       elseif(NOT input STREQUAL "")
         message(FATAL_ERROR "Unsupported Windows embedded link input: ${input}")

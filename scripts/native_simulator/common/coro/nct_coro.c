@@ -62,6 +62,11 @@ void *nct_init(void (*fptr)(void *))
 {
 	struct nct *this = &nct_instances[nct_next];
 
+#ifdef NSI_CORO_FIBERS
+	if (this->threads != NULL) {
+		nsi_print_error_and_exit("%s: cannot initialize a live NCT instance\n", __func__);
+	}
+#endif
 #ifdef NSI_NCE_BACKEND_PTHREADS
 	/* With pthread NCE, the CPU pthread is the root of the coroutine domain. */
 	nsi_coro_ctx_reset();
@@ -94,9 +99,16 @@ int nct_new_thread(void *this_arg, void *payload)
 	}
 	thread->owner = this;
 	thread->payload = payload;
-	nsi_coro_ctx_create(&thread->ctx, thread_entry, thread);
+#ifdef NSI_CORO_FIBERS
+	/* Root cleanup must find partial allocations if stack bootstrap fails. */
 	this->threads[idx] = thread;
 	this->n_threads++;
+#endif
+	nsi_coro_ctx_create(&thread->ctx, thread_entry, thread);
+#ifndef NSI_CORO_FIBERS
+	this->threads[idx] = thread;
+	this->n_threads++;
+#endif
 	return idx;
 }
 

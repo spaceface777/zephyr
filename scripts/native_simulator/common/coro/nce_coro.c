@@ -18,6 +18,9 @@ struct nce {
 	void (*start_routine)(void);
 	bool halted;
 	bool terminated;
+#ifdef NSI_CORO_FIBERS
+	bool cleaned;
+#endif
 };
 
 static struct nce nce_instances[NSI_N_CPUS];
@@ -46,9 +49,18 @@ void nce_boot_cpu(void *this_arg, void (*start_routine)(void))
 {
 	struct nce *this = this_arg;
 
+#ifdef NSI_CORO_FIBERS
+	if (this->start_routine != NULL || this->terminated) {
+		nsi_print_error_and_exit("%s: CPU was already booted\n", __func__);
+	}
+	nsi_fiber_domain_enter();
+#endif
 	this->start_routine = start_routine;
 	nsi_coro_ctx_create(&this->boot, boot_entry, this);
 	this->switch_ctx = &this->boot;
+#ifdef NSI_CORO_FIBERS
+	nsi_fiber_domain_leave();
+#endif
 	nce_wake_cpu(this);
 }
 
@@ -74,9 +86,15 @@ void nce_wake_cpu(void *this_arg)
 	if (!this->halted) {
 		nsi_print_error_and_exit("%s: CPU was already awake\n", __func__);
 	}
+#ifdef NSI_CORO_FIBERS
+	nsi_fiber_domain_enter();
+#endif
 	this->halted = false;
 	this->waker = nsi_coro_ctx_current();
 	nsi_coro_ctx_switch(this->switch_ctx, false);
+#ifdef NSI_CORO_FIBERS
+	nsi_fiber_domain_leave();
+#endif
 
 	if (this->terminated) {
 		nsi_exit(0);
@@ -90,12 +108,26 @@ void nce_terminate(void *this_arg)
 	if (this == NULL) {
 		return;
 	}
+#ifdef NSI_CORO_FIBERS
+	if (this->cleaned) {
+		return;
+	}
+	nsi_fiber_domain_exit_begin();
+	this->terminated = true;
+#endif
 	if (!this->halted) {
 		this->terminated = true;
 		this->halted = true;
 		nsi_coro_ctx_switch(this->waker, true);
 	}
+#ifdef NSI_CORO_FIBERS
+	if (this->boot.fiber != NULL) {
+		nsi_coro_ctx_free(&this->boot);
+	}
+	this->cleaned = true;
+#else
 	nsi_coro_ctx_free(&this->boot);
+#endif
 }
 
 int nce_is_cpu_running(void *this_arg)

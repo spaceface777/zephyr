@@ -5,12 +5,17 @@ cmake_minimum_required(VERSION 3.20)
 include("${NSI_CONFIG}")
 # --build reads the build tool from the cache, not from normal scope variables.
 set(CMAKE_MAKE_PROGRAM "${CMAKE_MAKE_PROGRAM}" CACHE FILEPATH "Selected Ninja" FORCE)
+if(NSI_FIBER_SESSION_EXTERNAL AND NSI_BUILD_EXE)
+  message(FATAL_ERROR "External Fibers session provider requires library-only mode.")
+endif()
 
 # Neither environment flags nor a Zephyr toolchain file belong to this project.
 set(CMAKE_TOOLCHAIN_FILE "" CACHE FILEPATH "Runner toolchain file" FORCE)
-set(CMAKE_C_FLAGS "" CACHE STRING "Runner C flags" FORCE)
-foreach(configuration DEBUG RELEASE RELWITHDEBINFO MINSIZEREL)
-  set(CMAKE_C_FLAGS_${configuration} "" CACHE STRING "Runner C flags" FORCE)
+foreach(language C CXX ASM)
+  set(CMAKE_${language}_FLAGS "" CACHE STRING "Runner ${language} flags" FORCE)
+  foreach(configuration DEBUG RELEASE RELWITHDEBINFO MINSIZEREL)
+    set(CMAKE_${language}_FLAGS_${configuration} "" CACHE STRING "Runner ${language} flags" FORCE)
+  endforeach()
 endforeach()
 project(native_sim_windows_runner LANGUAGES C)
 if(NOT CMAKE_HOST_WIN32 OR NOT CMAKE_C_COMPILER_ID STREQUAL "GNU")
@@ -21,6 +26,54 @@ file(GLOB runner_sources CONFIGURE_DEPENDS
   "${NSI_DIR}/common/src/*.c"
   "${NSI_DIR}/native/src/*.c"
 )
+# Mach-O section adapters have no implementation on the PE host.
+list(REMOVE_ITEM runner_sources
+  "${NSI_DIR}/common/src/macho_ranges.c"
+  "${NSI_DIR}/common/src/nsi_hw_scheduler_macho.c"
+)
+
+if(NSI_NCE_BACKEND STREQUAL "coroutines")
+  if(NOT NSI_NCT_BACKEND STREQUAL "coroutines")
+    message(FATAL_ERROR "Windows coroutine NCE requires coroutine NCT.")
+  endif()
+  list(REMOVE_ITEM runner_sources "${NSI_DIR}/common/src/nce.c")
+  list(APPEND runner_sources "${NSI_DIR}/common/coro/nce_coro.c")
+elseif(NOT NSI_NCE_BACKEND STREQUAL "pthreads")
+  message(FATAL_ERROR "The Windows runner supports pthread or coroutine NCE only.")
+endif()
+set(runner_libraries "")
+if(NSI_NCT_BACKEND STREQUAL "coroutines")
+  list(REMOVE_ITEM runner_sources "${NSI_DIR}/common/src/nct.c")
+  list(APPEND runner_sources "${NSI_DIR}/common/coro/nct_coro.c")
+  if(NSI_CORO_BACKEND STREQUAL "fibers")
+    list(APPEND runner_sources "${NSI_DIR}/common/coro/nsi_fiber_ctx.c")
+    if(NOT NSI_FIBER_SESSION_EXTERNAL)
+      list(APPEND runner_sources "${NSI_DIR}/common/coro/nsi_fiber_session.c")
+    endif()
+  elseif(NSI_CORO_BACKEND STREQUAL "asm")
+    enable_language(ASM)
+    list(APPEND runner_sources
+      "${NSI_DIR}/common/coro/nsi_coro_ctx.c"
+      "${NSI_DIR}/common/coro/nsi_coro.S"
+    )
+  elseif(NSI_CORO_BACKEND STREQUAL "boost")
+    enable_language(CXX)
+    list(APPEND runner_sources
+      "${NSI_DIR}/common/coro/nsi_coro_ctx.c"
+      "${NSI_DIR}/common/coro/nsi_coro_boost.cpp"
+    )
+    if(NOT NSI_BOOST_CONTEXT_LIB)
+      message(FATAL_ERROR "The Boost.Context primitive requires the Boost.Context library.")
+    endif()
+    set(runner_libraries "${NSI_BOOST_CONTEXT_LIB}")
+  else()
+    message(FATAL_ERROR "Windows coroutine NCT supports Fibers, the assembly switch "
+                        "and Boost.Context only.")
+  endif()
+elseif(NOT NSI_NCT_BACKEND STREQUAL "pthreads")
+  message(FATAL_ERROR "The Windows runner supports pthread or coroutine NCT only.")
+endif()
+
 foreach(source IN LISTS NSI_INTERFACE_SOURCES)
   if(source MATCHES "\\.h$")
     set_source_files_properties("${source}" PROPERTIES HEADER_FILE_ONLY TRUE)
@@ -34,19 +87,30 @@ set_target_properties(runner PROPERTIES PREFIX "" OUTPUT_NAME runner SUFFIX ".a"
 )
 target_compile_definitions(runner PRIVATE
   NSI_RUNNER_BUILD NSI_N_CPUS=1
+  $<$<STREQUAL:${NSI_NCE_BACKEND},pthreads>:NSI_NCE_BACKEND_PTHREADS>
+  $<$<STREQUAL:${NSI_NCE_BACKEND},coroutines>:NSI_NCE_BACKEND_COROUTINES>
+  $<$<STREQUAL:${NSI_CORO_BACKEND},fibers>:NSI_CORO_FIBERS>
   _POSIX_C_SOURCE=200809L _XOPEN_SOURCE=600 _XOPEN_SOURCE_EXTENDED
   ${NSI_INTERFACE_COMPILE_DEFINITIONS}
 )
 target_include_directories(runner PRIVATE
   "${NSI_DIR}/common/src/include"
+  "${NSI_DIR}/common/coro"
   "${NSI_DIR}/common/src"
   "${NSI_DIR}/native/src/include"
   ${NSI_INTERFACE_INCLUDE_DIRECTORIES}
 )
-target_include_directories(runner SYSTEM PRIVATE ${NSI_INTERFACE_SYSTEM_INCLUDE_DIRECTORIES})
+target_include_directories(runner SYSTEM PRIVATE
+  ${NSI_INTERFACE_SYSTEM_INCLUDE_DIRECTORIES}
+  "$<$<COMPILE_LANGUAGE:CXX>:${NSI_BOOST_INCLUDE_DIRS}>"
+)
 # Interface options follow defaults, so an explicit optimization option wins.
 target_compile_options(runner PRIVATE
   -g -Wall -Wpedantic -O0 -fno-pie -fno-pic -ffunction-sections -fdata-sections
+  $<$<STREQUAL:${NSI_CORO_BACKEND},fibers>:-msse2>
+  # The C++ primitive uses no C++ runtime, so the C link needs no libstdc++.
+  $<$<COMPILE_LANGUAGE:CXX>:-fno-exceptions>
+  $<$<COMPILE_LANGUAGE:CXX>:-fno-rtti>
   ${NSI_INTERFACE_COMPILE_OPTIONS}
 )
 add_custom_target(runner_lib DEPENDS runner)
@@ -105,10 +169,10 @@ endforeach()
 add_custom_command(OUTPUT "${NSI_EXE}"
   COMMAND "${CMAKE_C_COMPILER}"
     -Wl,--whole-archive "${localized}" "$<TARGET_FILE:runner>" ${NSI_LIBRARIES}
-    -Wl,--no-whole-archive -o "${NSI_EXE}"
+    -Wl,--no-whole-archive ${runner_libraries} -o "${NSI_EXE}"
     -fno-pie -fno-pic -Wall -Wpedantic -Wl,--gc-sections -pthread
     ${link_options} -lm -T "${final_script}"
-  DEPENDS runner "${localized}" ${NSI_LIBRARIES} "${final_script}"
+  DEPENDS runner "${localized}" ${NSI_LIBRARIES} ${runner_libraries} "${final_script}"
   COMMAND_EXPAND_LISTS
   VERBATIM
 )

@@ -70,10 +70,10 @@ The experimental mode does not support Windows-64 binaries, ARM64 binaries, or M
 It does not support cross-compilation from Linux or macOS.
 Windows on Arm runs the i686 executable through x86 emulation.
 
-This mode uses one embedded CPU, the pthread NCE and NCT backends, and the host C library
-(:kconfig:option:`CONFIG_EXTERNAL_LIBC`).
+This mode uses one embedded CPU and the host C library (:kconfig:option:`CONFIG_EXTERNAL_LIBC`).
+NCE and NCT use pthreads by default.
 The selected MinGW compiler headers depend on its host C runtime.
-Other C library choices are not currently supported in this mode.
+Other C library choices are not supported in this mode.
 Its scope is console output, simulated clock events, kernel scheduling, and clean exit.
 Real-time pacing, C++, entropy, file-backed devices, host networking, reboot, profiling, and
 sanitizers are outside this scope.
@@ -122,6 +122,109 @@ Run the executable with a simulation time limit:
 .. code-block:: bat
 
    C:\build\native_sim\zephyr\zephyr.exe -stop_at=1
+
+The COFF build retains the original weak-symbol metadata for localization.
+Garbage collection runs at the final link, after the weak-symbol repair.
+The repair preserves weak overrides and keeps embedded definitions private.
+The build uses unmodified binutils.
+
+The Windows stack adapter measures OS guard pages before it requests a committed thread stack.
+It checks each child stack independently before it publishes bounds or permits sentinel writes.
+An unfamiliar stack layout produces an error instead of guessed bounds or modified guard pages.
+
+Experimental Windows Fibers
+---------------------------
+
+To run embedded threads as Win32 Fibers on the CPU pthread, set:
+
+.. code-block:: kconfig
+
+   CONFIG_NATIVE_SIMULATOR_NCT_BACKEND_COROUTINES=y
+   CONFIG_NATIVE_SIMULATOR_COROUTINE_IMPLEMENTATION_WINDOWS_FIBERS=y
+
+Fibers implement the context-manager interface, not the caller-owned-stack coroutine primitive.
+Windows owns each stack and reusable handle. NCE defaults to pthread-based execution.
+To run HW and SW on one host thread, also select
+``CONFIG_NATIVE_SIMULATOR_NCE_BACKEND_COROUTINES=y``.
+Coroutine NCE requires coroutine NCT. Other hosts reject the Windows Fibers selection.
+
+The context manager attaches its root on the CPU thread, not during HW initialization.
+It adopts an existing fiber without changing its data or ownership.
+Each child reports its committed writable stack bounds before Zephyr writes its sentinel.
+The context manager measures the guard geometry and retains the 8 MiB reservation.
+It preserves errno, x87 state, and SSE state across switches.
+
+The CPU pthread can halt while its current fiber remains selected.
+Shutdown therefore retains the domain until process exit. Reset after attachment is an error.
+This lifetime limit applies to pthread NCE only.
+Self-abort releases the outgoing fiber from the destination stack after the switch.
+Deletion callbacks preserve the live caller's errno and FP state, not a stale switch snapshot.
+
+Full Fibers returns to the host root before it deletes the boot and remaining thread contexts.
+A maintenance grant remains active through embedded and runner exit callbacks.
+Only then does the domain detach and its private default session release owned conversion.
+Borrowed roots retain their conversion and fiber data.
+
+Hosts with localized domains must open one ``nsi_fiber_session`` and bind every domain before boot.
+The session provider and its validation registry must remain outside COFF domain localization.
+Each domain keeps its own context manager, NCE, NCT, and runner state.
+Grants are serial. Nested grants, foreign context handles, and thread migration are rejected.
+The host closes the shared session on its original root after the final domain and callbacks detach.
+Repeated context-domain lifecycle does not reinitialize the Zephyr image or enable reboot.
+
+The stack adapter uses ``GetCurrentThreadStackLimits`` and checks all regions with ``VirtualQuery``.
+It requires Windows 8 APIs. The tested platform is Windows 11 i686 under WOW64.
+The returned allocation limits must contain the bootstrap frame and match the guarded layout.
+Unfamiliar limits or layouts fail before sentinel publication.
+A failed probe or child handshake returns to its creator before normal exit cleanup.
+
+``CONFIG_INIT_STACKS`` still initializes the original Zephyr stack object.
+The context manager does not fill native fiber stacks because the bootstrap frames remain live.
+Native unused-stack accounting, the thread analyzer, and runtime stack safety are not supported.
+The build rejects the latter two features. Stack bounds and sentinel checks remain enabled.
+
+Assembly and Boost.Context coroutines
+-------------------------------------
+
+Windows also supports the minimal assembly switch and the Boost.Context primitive.
+To use one of them for NCT, set:
+
+.. code-block:: kconfig
+
+   CONFIG_NATIVE_SIMULATOR_NCT_BACKEND_COROUTINES=y
+   CONFIG_NATIVE_SIMULATOR_COROUTINE_IMPLEMENTATION_ASM=y
+
+For Boost.Context, select ``CONFIG_NATIVE_SIMULATOR_COROUTINE_IMPLEMENTATION_BOOST_CONTEXT=y``.
+To run HW and SW on one host thread, also select
+``CONFIG_NATIVE_SIMULATOR_NCE_BACKEND_COROUTINES=y``.
+The ucontext and longjmp primitives are not supported. The UCRT has no ucontext functions.
+The i386 CRT ``longjmp`` also does not support a jump to another stack.
+
+Both primitives use the shared context manager with caller-owned stacks.
+Each stack has 8 MiB of committed memory, with an inaccessible reserved page at each end.
+Each switch exchanges the stack and exception fields of the thread information block.
+Each new coroutine also gets a final structured exception record.
+Thus ``GetCurrentThreadStackLimits`` and structured exception dispatch work on coroutine stacks.
+The context manager preserves errno, the x87 environment, and MXCSR for each context.
+All coroutines share the identity, thread-local storage, and fiber-local storage of the host thread.
+
+The Boost.Context primitive needs a static Boost.Context library built for i686 MinGW.
+The build finds it through the CMake package files of Boost.
+The C++ primitive uses no C++ runtime, so the C link does not need ``libstdc++``.
+For example, from the root of the Boost 1.90.0 source archive:
+
+.. code-block:: bat
+
+   bootstrap.bat gcc
+   b2 --with-context toolset=gcc address-model=32 architecture=x86 link=static ^
+     variant=release --layout=system --prefix=C:/boost install
+
+Then add ``-DCMAKE_PREFIX_PATH=C:/boost`` to the CMake arguments.
+
+With pthread NCE, the CPU pthread keeps its current coroutine stack until process exit.
+With coroutine NCE, exit cleanup releases all coroutine stacks on the host stack.
+Coroutines must stay on the thread that created them.
+Native unused-stack accounting, the thread analyzer, and runtime stack safety are not supported.
 
 Running
 =======

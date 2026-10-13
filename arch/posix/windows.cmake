@@ -34,10 +34,23 @@ endif()
 if(DEFINED NATIVE_TARGET_HOST AND NOT NATIVE_TARGET_HOST STREQUAL "x86_64")
   message(FATAL_ERROR "Windows native_sim requires the x86 target family, not ${NATIVE_TARGET_HOST}.")
 endif()
-# The native simulator uses pthread NCE and NCT implementations.
-if(NOT CONFIG_NATIVE_SIMULATOR_NUMBER_MCUS EQUAL 1 OR
-   CONFIG_NATIVE_SIMULATOR_EXTRA_IMAGE_PATHS)
-  message(FATAL_ERROR "Windows native_sim supports one embedded image with pthread NCE and NCT.")
+if(NOT CONFIG_NATIVE_SIMULATOR_NUMBER_MCUS EQUAL 1 OR CONFIG_NATIVE_SIMULATOR_EXTRA_IMAGE_PATHS)
+  message(FATAL_ERROR "Windows native_sim supports one embedded image.")
+endif()
+if(CONFIG_NATIVE_SIMULATOR_NCE_BACKEND_COROUTINES AND
+   NOT CONFIG_NATIVE_SIMULATOR_NCT_BACKEND_COROUTINES)
+  message(FATAL_ERROR "Windows coroutine NCE requires coroutine NCT.")
+endif()
+if(CONFIG_NATIVE_SIMULATOR_NCT_BACKEND_COROUTINES AND
+   NOT CONFIG_NATIVE_SIMULATOR_COROUTINE_IMPLEMENTATION_WINDOWS_FIBERS AND
+   NOT CONFIG_NATIVE_SIMULATOR_COROUTINE_IMPLEMENTATION_ASM AND
+   NOT CONFIG_NATIVE_SIMULATOR_COROUTINE_IMPLEMENTATION_BOOST_CONTEXT)
+  message(FATAL_ERROR "Windows coroutine NCT supports Fibers, the assembly switch and "
+                      "Boost.Context. The UCRT has no ucontext functions.")
+endif()
+if(CONFIG_NATIVE_SIMULATOR_NCT_BACKEND_COROUTINES AND
+   (CONFIG_THREAD_ANALYZER OR CONFIG_THREAD_RUNTIME_STACK_SAFETY))
+  message(FATAL_ERROR "Windows coroutine NCT does not support native unused-stack accounting.")
 endif()
 if(NOT CONFIG_EXTERNAL_LIBC)
   message(FATAL_ERROR "Experimental Windows native_sim requires CONFIG_EXTERNAL_LIBC=y. "

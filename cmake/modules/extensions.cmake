@@ -6613,6 +6613,21 @@ function(zephyr_generate_macho_iterable_sections)
       DEPENDS ${header_file} ${alias_file} ${mapping_file}
     )
 
+    add_custom_command(
+      TARGET ${logical_target_for_zephyr_elf} POST_BUILD
+      COMMAND ${PYTHON_EXECUTABLE}
+              ${ZEPHYR_BASE}/scripts/build/order_macho_sections.py
+              --image $<TARGET_FILE:${logical_target_for_zephyr_elf}>
+              --struct-tags ${MACHO_STRUCT_TAGS}
+      VERBATIM
+    )
+    set_property(TARGET ${logical_target_for_zephyr_elf} APPEND PROPERTY LINK_DEPENDS
+      ${ZEPHYR_BASE}/scripts/build/order_macho_sections.py
+      ${ZEPHYR_BASE}/scripts/build/gen_macho_iter_sections.py
+      ${ZEPHYR_BASE}/scripts/build/iter_sections.py
+      ${MACHO_STRUCT_TAGS}
+    )
+
     # The bounds the image references are only known once it is linked, and
     # there are far too many iterable sections to emit them all: see
     # gen_macho_aliases.py.
@@ -6622,10 +6637,13 @@ function(zephyr_generate_macho_iterable_sections)
               ${ZEPHYR_BASE}/scripts/build/gen_macho_aliases.py
               --image $<TARGET_FILE:${logical_target_for_zephyr_elf}>
               --mapping ${mapping_file}
+              --struct-tags ${MACHO_STRUCT_TAGS}
               --nm ${CMAKE_NM}
               --output ${image_alias_file}
       DEPENDS
         ${ZEPHYR_BASE}/scripts/build/gen_macho_aliases.py
+        ${ZEPHYR_BASE}/scripts/build/order_macho_sections.py
+        ${MACHO_STRUCT_TAGS}
         ${mapping_file}
         ${logical_target_for_zephyr_elf}
       VERBATIM

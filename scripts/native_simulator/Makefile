@@ -18,6 +18,20 @@ NSI_CONFIG_FILE?=nsi_config
 -include ${NSI_CONFIG_FILE}
 #If the file does not exist, we don't use it as a build dependency
 NSI_CONFIG_FILE:=$(wildcard ${NSI_CONFIG_FILE})
+HOST_OS?=$(shell uname -s)
+
+ifeq (${HOST_OS},Windows)
+# MSYS make and its shell use POSIX paths; native tools receive Windows paths
+# through MSYS argument conversion. Whitespace paths are rejected by CMake.
+NSI_CYGPATH?=cygpath
+nsi_posix_path=$(shell "${NSI_CYGPATH}" -u "$(1)")
+$(foreach var,NSI_AR NSI_BUILD_PATH NSI_CC NSI_CXX NSI_OBJCOPY NSI_PYTHON NSI_NM \
+ NSI_EXE NSI_PATH NSI_COFF_HELPER,\
+ $(eval $(var):=$(call nsi_posix_path,$($(var)))))
+NSI_EMBEDDED_CPU_SW:=$(foreach path,${NSI_EMBEDDED_CPU_SW},$(call nsi_posix_path,${path}))
+NSI_EXTRA_SRCS:=$(foreach path,${NSI_EXTRA_SRCS},$(call nsi_posix_path,${path}))
+NSI_EXTRA_LIBS:=$(foreach path,${NSI_EXTRA_LIBS},$(call nsi_posix_path,${path}))
+endif
 
 # Configurable/user overridible variables:
 #  Path to the native_simulator (this folder):
@@ -92,7 +106,6 @@ NSI_WARNINGS?=-Wall -Wpedantic
 #  Preprocessor flags
 NSI_CPPFLAGS?=-D_POSIX_C_SOURCE=200809L -D_XOPEN_SOURCE=600 -D_XOPEN_SOURCE_EXTENDED
 
-HOST_OS:=$(shell uname -s)
 ifeq (${HOST_OS},Darwin)
   NSI_CPPFLAGS+=-D_DARWIN_C_SOURCE
 endif
@@ -117,6 +130,17 @@ FINALLINK_FLAGS:=${NO_PIE_CO} ${NSI_WARNINGS} \
 NSI_LINK_CMD=${NSI_LINKER} ${LOCALIZED_EMBSW} -Wl,-force_load,${NSI_BUILD_PATH}/${RUNNER_LIB} \
   ${NSI_EXTRA_LIBS} ${CORO_EXTRA_LIBS} -o $@ ${FINALLINK_FLAGS}
 NSI_LINK_EXTRA_DEPS:=${NSI_ORDER_FILE}
+NSI_LOCALIZE_DEPS:=
+else ifeq (${HOST_OS},Windows)
+FINALLINK_FLAGS:=${NO_PIE_CO} ${NSI_WARNINGS} -Wl,--gc-sections -pthread \
+  ${NSI_LINK_OPTIONS} -lm
+NSI_LINK_CMD=${NSI_LINKER} -Wl,--whole-archive ${LOCALIZED_EMBSW} \
+  ${NSI_BUILD_PATH}/${RUNNER_LIB} ${NSI_EXTRA_LIBS} -Wl,--no-whole-archive \
+  -o $@ ${FINALLINK_FLAGS} -T ${NSI_BUILD_PATH}/windows_linker_script.ld
+NSI_LINK_EXTRA_DEPS:=${NSI_BUILD_PATH}/windows_linker_script.ld
+NSI_LOCALIZE_DEPS:=${NSI_COFF_HELPER} \
+ $(dir ${NSI_COFF_HELPER})../pylib/build_helpers/coff_parser.py \
+ $(addsuffix .coff-inputs,${NSI_EMBEDDED_CPU_SW})
 else
 FINALLINK_FLAGS:=${NO_PIE_CO} -no-pie  ${NSI_WARNINGS} \
   -Wl,--gc-sections -ldl -pthread \
@@ -125,6 +149,7 @@ NSI_LINK_CMD=${NSI_LINKER} -Wl,--whole-archive ${LOCALIZED_EMBSW} ${NSI_BUILD_PA
   ${NSI_EXTRA_LIBS} -Wl,--no-whole-archive ${CORO_EXTRA_LIBS} \
   -o $@ ${FINALLINK_FLAGS} -T ${NSI_BUILD_PATH}/linker_script.ld
 NSI_LINK_EXTRA_DEPS:=${NSI_BUILD_PATH}/linker_script.ld
+NSI_LOCALIZE_DEPS:=
 endif
 
 no_default:
@@ -237,6 +262,11 @@ ${NSI_BUILD_PATH}/%.o: ${NSI_PATH}/%.S ${NSI_PATH}Makefile ${NSI_CONFIG_FILE}
 ${NSI_BUILD_PATH}/linker_script.ld : ${NSI_PATH}/common/other/linker_script.pre.ld | ${NSI_BUILD_PATH}
 	${NSI_CC} -x c -E -P $< -o $@  ${DEPENDFLAGS}
 
+ifeq (${HOST_OS},Windows)
+${NSI_BUILD_PATH}/windows_linker_script.ld: ${NSI_BUILD_PATH}/linker_script.ld ${LOCALIZED_EMBSW}
+	cat ${NSI_BUILD_PATH}/linker_script.ld $(addsuffix .ld,${LOCALIZED_EMBSW}) > $@
+endif
+
 ${NSI_BUILD_PATH}/${RUNNER_LIB}: ${OBJS}
 	if [ -f $@ ]; then rm $@ ; fi
 	${NSI_AR} -cr $@ ${OBJS}
@@ -253,7 +283,7 @@ ${NSI_ORDER_FILE}: ${SRCS} ${NSI_EXTRA_SRCS} \
 	done
 endif
 
-${NSI_BUILD_PATH}/%.loc_cpusw.o: /% ${NSI_CONFIG_FILE}
+${NSI_BUILD_PATH}/%.loc_cpusw.o: /% ${NSI_CONFIG_FILE} ${NSI_LOCALIZE_DEPS}
 	@if [ -z $< ] || [ ! -f $< ]; then \
 	  echo "Error: Input embedded CPU SW ($<) not found \
 (NSI_EMBEDDED_CPU_SW=${NSI_EMBEDDED_CPU_SW} )"; \
@@ -282,6 +312,9 @@ ifeq (${HOST_OS},Darwin)
 	   $$2 == "(__TEXT,nsiiftxt)" { print $$NF }' > $@.symbols; \
 	${NSI_NMEDIT} -s $@.symbols -o $@ $@.section; \
 	rm -f $@.section $@.symbols
+else ifeq (${HOST_OS},Windows)
+	${NSI_PYTHON} ${NSI_COFF_HELPER} --inputs $<.coff-inputs --input $< --output $@ \
+	 --linker-script $@.ld --objcopy ${NSI_OBJCOPY}
 else
 	${NSI_OBJCOPY} --localize-hidden $< $@ -w --localize-symbol=_* ${NSI_LOCALIZE_OPTIONS}
 endif

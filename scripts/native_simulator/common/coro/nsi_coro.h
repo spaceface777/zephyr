@@ -7,12 +7,15 @@
 #ifndef NSI_COMMON_CORO_NSI_CORO_H
 #define NSI_COMMON_CORO_NSI_CORO_H
 
-#ifdef __cplusplus
-extern "C" {
-#endif
-
 #ifndef NSI_CORO_STACK_SIZE
 #define NSI_CORO_STACK_SIZE (8 * 1024 * 1024)
+#endif
+
+/* Assembly implementations use only the stack size above. */
+#ifndef __ASSEMBLER__
+
+#ifdef __cplusplus
+extern "C" {
 #endif
 
 /*
@@ -46,5 +49,7 @@ nsi_coro_t nsi_coro_switch(nsi_coro_t target);
 #ifdef __cplusplus
 }
 #endif
+
+#endif /* !__ASSEMBLER__ */
 
 #endif /* NSI_COMMON_CORO_NSI_CORO_H */

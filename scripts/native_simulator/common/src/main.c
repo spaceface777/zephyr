@@ -22,12 +22,18 @@
 #include "nsi_config.h"
 #include "nsi_cpu_ctrl.h"
 #include "nsi_tracing.h"
+#if defined(NSI_CORO_FIBERS) && defined(NSI_NCE_BACKEND_COROUTINES)
+#include "nsi_coro_ctx.h"
+#endif
 
 int nsi_exit_inner(int exit_code)
 {
 	static int max_exit_code;
 	int cpu_ret;
 
+#if defined(NSI_CORO_FIBERS) && defined(NSI_NCE_BACKEND_COROUTINES)
+	nsi_fiber_domain_exit_begin();
+#endif
 	max_exit_code = NSI_MAX(exit_code, max_exit_code);
 	/*
 	 * nsif_cpun_cleanup may not return if this is called from a SW thread,
@@ -42,6 +48,9 @@ int nsi_exit_inner(int exit_code)
 	nsi_run_tasks(NSITASK_ON_EXIT_PRE_LEVEL);
 	nsi_hws_cleanup();
 	nsi_run_tasks(NSITASK_ON_EXIT_POST_LEVEL);
+#if defined(NSI_CORO_FIBERS) && defined(NSI_NCE_BACKEND_COROUTINES)
+	nsi_fiber_domain_exit_end();
+#endif
 	return max_exit_code;
 }
 

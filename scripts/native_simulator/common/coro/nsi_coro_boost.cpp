@@ -35,14 +35,18 @@ static void trampoline(transfer_t transfer)
 
 extern "C" nsi_coro_t nsi_coro_create(void *stack_top, nsi_coro_entry_f entry)
 {
+	/*
+	 * Keep the continuation at the top of the stack, above the fcontext stack.
+	 * Zephyr can write a stack sentinel at the lowest stack address.
+	 */
+	uintptr_t top = reinterpret_cast<uintptr_t>(stack_top);
+	uintptr_t stack_bottom = top - NSI_CORO_STACK_SIZE;
 	auto *continuation = reinterpret_cast<struct continuation *>(
-		static_cast<char *>(stack_top) - NSI_CORO_STACK_SIZE);
-	uintptr_t stack_bottom = (reinterpret_cast<uintptr_t>(continuation + 1) + 15U) &
-				 ~(uintptr_t)15U;
+		(top - sizeof(struct continuation)) & ~(uintptr_t)15U);
 
 	continuation->entry = entry;
-	continuation->context = make_fcontext(stack_top,
-		reinterpret_cast<uintptr_t>(stack_top) - stack_bottom, trampoline);
+	continuation->context = make_fcontext(continuation,
+		reinterpret_cast<uintptr_t>(continuation) - stack_bottom, trampoline);
 	return continuation;
 }
 

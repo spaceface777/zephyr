@@ -261,8 +261,8 @@ class TestInstance(StatusMixin):
         simulation = options.sim_name
 
         simulator = self.platform.simulator_by_name(simulation)
-        if os.name == 'nt' and simulator and simulator.name not in ('na', 'qemu'):
-            # running on simulators is currently supported only for QEMU on Windows
+        if os.name == 'nt' and simulator and simulator.name not in ('na', 'native', 'qemu'):
+            # Windows supports native executables and QEMU.
             return False
 
         # QEMU_BIN_PATH is optional and acts as an override.

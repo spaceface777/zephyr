@@ -768,17 +768,19 @@ class TestPlan:
     def native_host_supported(self):
         """Return whether native platforms can be built and run on this host.
 
-        macOS support is experimental and has to be opted into with
-        NATIVE_SIM_EXPERIMENTAL_MACOS, the same way a plain build does.
+        macOS and Windows require their experimental CMake opt-in, as plain builds do.
         """
         if sys.platform == 'linux':
             return True
 
-        if sys.platform != 'darwin':
+        if sys.platform == 'darwin':
+            option = 'NATIVE_SIM_EXPERIMENTAL_MACOS=ON'
+        elif sys.platform == 'win32':
+            option = 'NATIVE_SIM_EXPERIMENTAL_WINDOWS=ON'
+        else:
             return False
 
-        return any('NATIVE_SIM_EXPERIMENTAL_MACOS=ON' in arg
-                   for arg in self.options.extra_args)
+        return any(option in arg for arg in self.options.extra_args)
 
     def load_from_file(self, file, filter_platform=None):
         if filter_platform is None:
@@ -1156,7 +1158,10 @@ class TestPlan:
                         Filters.ENVIRONMENT
                     )
                 if plat.type == 'native' and not self.native_host_supported():
-                    instance.add_filter("Native platform requires Linux", Filters.ENVIRONMENT)
+                    instance.add_filter(
+                        "Native platform requires Linux or an experimental host opt-in",
+                        Filters.ENVIRONMENT,
+                    )
 
                 if not force_toolchain \
                         and toolchain and (toolchain not in plat.supported_toolchains) and \

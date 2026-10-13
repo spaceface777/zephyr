@@ -36,6 +36,28 @@ def mock_twister_env():
     return env
 
 
+@pytest.mark.parametrize(
+    'host,extra_args,supported',
+    [
+        ('linux', [], True),
+        ('darwin', [], False),
+        ('darwin', ['NATIVE_SIM_EXPERIMENTAL_MACOS=ON'], True),
+        ('darwin', ['NATIVE_SIM_EXPERIMENTAL_MACOS=OFF'], False),
+        ('darwin', ['NATIVE_SIM_EXPERIMENTAL_WINDOWS=ON'], False),
+        ('win32', [], False),
+        ('win32', ['NATIVE_SIM_EXPERIMENTAL_WINDOWS=ON'], True),
+        ('win32', ['NATIVE_SIM_EXPERIMENTAL_WINDOWS=OFF'], False),
+        ('win32', ['NATIVE_SIM_EXPERIMENTAL_MACOS=ON'], False),
+        ('freebsd', [], False),
+        ('freebsd', ['NATIVE_SIM_EXPERIMENTAL_WINDOWS=ON'], False),
+    ],
+)
+def test_native_host_supported(class_testplan, monkeypatch, host, extra_args, supported):
+    monkeypatch.setattr('twisterlib.testplan.sys.platform', host)
+    class_testplan.options.extra_args = extra_args
+    assert class_testplan.native_host_supported() is supported
+
+
 def test_testplan_add_testsuites_short(class_testplan):
     """ Testing add_testcase function of Testsuite class in twister """
     # Test 1: Check the list of testsuites after calling add testsuites function is as expected

@@ -225,6 +225,7 @@ do {                                                                    \
 				"." __FILE__			\
 				"." Z_STRINGIFY(b))))
 #endif
+#endif
 
 #ifndef __in_section_unique
 #define __in_section_unique(seg) ___in_section_unique(seg, __COUNTER__)

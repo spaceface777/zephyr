@@ -1,0 +1,9 @@
+# SPDX-FileCopyrightText: Copyright The Zephyr Project Contributors
+# SPDX-License-Identifier: Apache-2.0
+source "Kconfig.zephyr"
+
+config TEST_FIBER_WRONG_OWNER
+	bool "Call the context manager from a foreign thread"
+
+config TEST_FIBER_BORROWED_ROOT
+	bool "Borrow a zero-FP-flag root before backend attachment"

@@ -8,8 +8,12 @@
 #include <pthread.h>
 #include <stdlib.h>
 #include <string.h>
+#ifdef _WIN32
+#include <windows.h>
+#else
 #include <sys/mman.h>
 #include <unistd.h>
+#endif
 #include "nsi_coro_ctx.h"
 #include "nsi_tracing.h"
 
@@ -19,7 +23,39 @@ void __sanitizer_finish_switch_fiber(void *fake_stack_save, const void **bottom_
 				     size_t *size_old);
 #endif
 
+#ifdef _WIN32
+/* The Windows runner is C-only, so no C++ exception globals exist. */
+static struct cxa_eh_globals *(*const cxa_get_globals)(void);
+
+static int fpenv_save(struct nsi_coro_fpenv *env)
+{
+	/* fnstenv masks all x87 exceptions, so load the saved environment again. */
+	__asm__ volatile("fnstenv %0" : "=m"(env->x87));
+	__asm__ volatile("fldenv %0" : : "m"(env->x87));
+	__asm__ volatile("stmxcsr %0" : "=m"(env->mxcsr));
+	return 0;
+}
+
+static int fpenv_restore(const struct nsi_coro_fpenv *env)
+{
+	__asm__ volatile("fldenv %0" : : "m"(env->x87));
+	__asm__ volatile("ldmxcsr %0" : : "m"(env->mxcsr));
+	return 0;
+}
+
+static size_t page_size(void)
+{
+	SYSTEM_INFO info;
+
+	GetSystemInfo(&info);
+	return info.dwPageSize;
+}
+#else
 struct cxa_eh_globals *__cxa_get_globals(void) __attribute__((weak));
+#define cxa_get_globals __cxa_get_globals
+#define fpenv_save fegetenv
+#define fpenv_restore fesetenv
+#endif
 
 static struct nsi_coro_ctx host_ctx;
 static struct nsi_coro_ctx *current = &host_ctx;
@@ -55,7 +91,13 @@ void nsi_coro_ctx_reset(void)
 void nsi_coro_ctx_free(struct nsi_coro_ctx *ctx)
 {
 	if (ctx->map != NULL) {
+#ifdef _WIN32
+		if (VirtualFree(ctx->map, 0, MEM_RELEASE) == 0) {
+			nsi_print_error_and_exit("%s: cannot release coroutine stack\n", __func__);
+		}
+#else
 		(void)munmap(ctx->map, ctx->map_size);
+#endif
 		ctx->map = NULL;
 	}
 }
@@ -79,12 +121,12 @@ static void after_switch(nsi_coro_t from)
 		deferred_ctx = NULL;
 		deferred_allocation = NULL;
 	}
-	if (fesetenv(&current->fenv) != 0) {
+	if (fpenv_restore(&current->fenv) != 0) {
 		nsi_print_error_and_exit("%s: cannot restore floating point environment\n",
 					 __func__);
 	}
-	if (__cxa_get_globals != NULL) {
-		*__cxa_get_globals() = current->eh;
+	if (cxa_get_globals != NULL) {
+		*cxa_get_globals() = current->eh;
 	}
 	errno = current->err;
 }
@@ -97,10 +139,10 @@ void nsi_coro_ctx_switch(struct nsi_coro_ctx *to, bool final)
 	}
 
 	current->err = errno;
-	if (__cxa_get_globals != NULL) {
-		current->eh = *__cxa_get_globals();
+	if (cxa_get_globals != NULL) {
+		current->eh = *cxa_get_globals();
 	}
-	if (fegetenv(&current->fenv) != 0) {
+	if (fpenv_save(&current->fenv) != 0) {
 		nsi_print_error_and_exit("%s: cannot save floating point environment\n",
 					 __func__);
 	}
@@ -125,6 +167,22 @@ static void trampoline(nsi_coro_t from)
 
 void nsi_coro_ctx_create(struct nsi_coro_ctx *ctx, void (*entry)(void *), void *arg)
 {
+#ifdef _WIN32
+	size_t page = page_size();
+
+	/*
+	 * Commit the whole stack: Zephyr can write a stack sentinel at its lowest
+	 * address. The reserved pages at both ends stay inaccessible.
+	 */
+	ctx->map_size = NSI_CORO_STACK_SIZE + 2 * page;
+	ctx->map = VirtualAlloc(NULL, ctx->map_size, MEM_RESERVE, PAGE_NOACCESS);
+	if ((ctx->map == NULL) ||
+	    (VirtualAlloc((char *)ctx->map + page, NSI_CORO_STACK_SIZE, MEM_COMMIT,
+			  PAGE_READWRITE) == NULL)) {
+		nsi_print_error_and_exit("%s: cannot allocate coroutine stack "
+					 "(Windows error %lu)\n", __func__, GetLastError());
+	}
+#else
 	size_t page = (size_t)sysconf(_SC_PAGESIZE);
 
 	ctx->map_size = NSI_CORO_STACK_SIZE + 2 * page;
@@ -135,11 +193,12 @@ void nsi_coro_ctx_create(struct nsi_coro_ctx *ctx, void (*entry)(void *), void *
 		      PROT_READ | PROT_WRITE) != 0)) {
 		nsi_print_error_and_exit("%s: cannot allocate coroutine stack\n", __func__);
 	}
+#endif
 
 	ctx->continuation = nsi_coro_create((char *)ctx->map + page + NSI_CORO_STACK_SIZE,
 					    trampoline);
 	ctx->err = 0;
-	if (fegetenv(&ctx->fenv) != 0) {
+	if (fpenv_save(&ctx->fenv) != 0) {
 		nsi_print_error_and_exit("%s: cannot read floating point environment\n",
 					 __func__);
 	}
@@ -154,7 +213,11 @@ void nsi_coro_ctx_create(struct nsi_coro_ctx *ctx, void (*entry)(void *), void *
 
 void nsi_coro_ctx_stack(struct nsi_coro_ctx *ctx, void **addr, unsigned long *size)
 {
+#ifdef _WIN32
+	size_t page = page_size();
+#else
 	size_t page = (size_t)sysconf(_SC_PAGESIZE);
+#endif
 
 	*addr = (char *)ctx->map + page;
 	*size = NSI_CORO_STACK_SIZE;

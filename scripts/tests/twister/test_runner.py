@@ -10,6 +10,7 @@ import errno
 import os
 import pathlib
 import re
+import struct
 import subprocess
 import sys
 from collections import deque
@@ -1725,6 +1726,62 @@ def test_projectbuilder_determine_testcases(
     pb.instance.testsuite.add_testcase.assert_has_calls(
         [mock.call(name=x) for x in added_tcs]
     )
+
+
+@pytest.mark.parametrize('pe_image', [False, True])
+def test_projectbuilder_image_symbol_names_coff(tmp_path, pe_image):
+    name = b'_z_ztest_unit_test__demo__test_function'
+    symbol_offset = 184 if pe_image else 20
+    string_offset = symbol_offset + 3 * 18
+    string_size = 4 + len(name) + 1
+    data = bytearray(string_offset + string_size)
+    if pe_image:
+        data[:2] = b'MZ'
+        struct.pack_into('<I', data, 0x3C, 64)
+        data[64:68] = b'PE\0\0'
+        struct.pack_into('<HHIIIHH', data, 68, 0x14C, 0, 0, symbol_offset, 3, 96, 0)
+        struct.pack_into('<H', data, 88, 0x10B)
+        struct.pack_into('<I', data, 116, 0x400000)
+        struct.pack_into('<I', data, 124, 1)
+        struct.pack_into('<I', data, 148, symbol_offset)
+    else:
+        struct.pack_into('<HHIIIHH', data, 0, 0x14C, 0, 0, symbol_offset, 3, 0, 0)
+    long_name = b'\0' * 4 + struct.pack('<I', 4)
+    struct.pack_into('<8sIhHBB', data, symbol_offset, long_name, 0, -1, 0, 2, 1)
+    struct.pack_into('<8sIhHBB', data, symbol_offset + 36, b'short', 0, -1, 0, 2, 0)
+    struct.pack_into('<I', data, string_offset, string_size)
+    data[string_offset + 4:] = name + b'\0'
+    image = tmp_path / 'zephyr.elf'
+    image.write_bytes(data)
+    assert list(ProjectBuilder.image_symbol_names(image)) == [name.decode(), 'short']
+
+
+def test_projectbuilder_image_symbol_names_coff_section(tmp_path):
+    section_name = b'._ztest_unit_test.static.z_ztest_unit_test__demo__test_function_'
+    name = b'_z_ztest_unit_test__demo__test_function'
+    symbol_offset = 60
+    string_offset = symbol_offset + 3 * 18
+    name_offset = 4 + len(section_name) + 1
+    strings = section_name + b'\0' + name + b'\0'
+    data = bytearray(string_offset + 4 + len(strings))
+    struct.pack_into('<HHIIIHH', data, 0, 0x14C, 1, 0, symbol_offset, 3, 0, 0)
+    struct.pack_into('<8sIIIIIIHHI', data, 20, b'.data', 0, 0, 0, 0, 0, 0, 0, 0, 0)
+    section_symbol = b'\0' * 4 + struct.pack('<I', 4)
+    struct.pack_into('<8sIhHBB', data, symbol_offset, section_symbol, 0, 1, 0, 3, 1)
+    symbol_name = b'\0' * 4 + struct.pack('<I', name_offset)
+    struct.pack_into('<8sIhHBB', data, symbol_offset + 36, symbol_name, 0, 1, 0, 3, 0)
+    struct.pack_into('<I', data, string_offset, 4 + len(strings))
+    data[string_offset + 4:] = strings
+    image = tmp_path / 'zephyr.elf'
+    image.write_bytes(data)
+    assert list(ProjectBuilder.image_symbol_names(image)) == [name.decode()]
+
+
+def test_projectbuilder_image_symbol_names_invalid_pe32(tmp_path):
+    image = tmp_path / 'zephyr.elf'
+    image.write_bytes(b'MZ' + b'\0' * 62)
+    with pytest.raises(ValueError, match='Invalid PE signature'):
+        list(ProjectBuilder.image_symbol_names(image))
 
 
 TESTDATA_8 = [

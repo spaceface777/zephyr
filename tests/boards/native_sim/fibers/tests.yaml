@@ -1,0 +1,16 @@
+# SPDX-FileCopyrightText: Copyright The Zephyr Project Contributors
+# SPDX-License-Identifier: Apache-2.0
+common:
+  platform_allow: native_sim/native
+  filter: CONFIG_NATIVE_SIMULATOR_COROUTINE_IMPLEMENTATION_WINDOWS_FIBERS
+  tags:
+    - kernel
+    - native_sim
+    - fibers
+tests:
+  boards.native_sim.fibers_state:
+    extra_configs:
+      - CONFIG_TEST_FIBER_BORROWED_ROOT=n
+  boards.native_sim.fibers_state.borrowed:
+    extra_configs:
+      - CONFIG_TEST_FIBER_BORROWED_ROOT=y

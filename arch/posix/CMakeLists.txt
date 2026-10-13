@@ -4,6 +4,10 @@ if(NATIVE_SIM_EXPERIMENTAL_WINDOWS AND NOT CMAKE_HOST_WIN32)
   message(FATAL_ERROR "Experimental Windows native_sim builds require a Windows host.")
 endif()
 
+if(CONFIG_NATIVE_SIMULATOR_COROUTINE_IMPLEMENTATION_WINDOWS_FIBERS AND NOT CMAKE_HOST_WIN32)
+  message(FATAL_ERROR "Windows Fibers require a native Windows host.")
+endif()
+
 if(CMAKE_HOST_WIN32)
   include(windows.cmake)
 elseif(CMAKE_HOST_APPLE)
@@ -58,7 +62,7 @@ set_property(TARGET native_simulator PROPERTY LOCALIZE_EXTRA_OPTIONS "")
 set(NSI_DIR ${ZEPHYR_BASE}/scripts/native_simulator CACHE PATH "Path to the native simulator")
 
 if(CMAKE_HOST_WIN32)
-  # Always target i686 to avoid ABI incompatibilities with Windows' LLP64 data model.
+  # The admitted i686 compiler determines the target even on Windows on Arm.
   set(TARGET_HOST "x86_64")
 elseif(NATIVE_TARGET_HOST) # Allow users to manually select the target for cross-compiling use cases
   set(TARGET_HOST ${NATIVE_TARGET_HOST})

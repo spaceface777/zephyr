@@ -500,6 +500,9 @@ def test_testinstance_setup_handler(
 
 
 TESTDATA_5 = [
+    ('nt', 'native', 'native', True,
+     False, False, 'console',
+     False, 'not runnable', [], None, True),
     ('nt', 'renode', mock.ANY, mock.ANY,
      mock.ANY, mock.ANY, mock.ANY,
      mock.ANY, mock.ANY, mock.ANY, mock.ANY, False),
@@ -530,7 +533,8 @@ TESTDATA_5 = [
     ' testsuite_build_only, testsuite_slow, testsuite_harness,' \
     ' enable_slow, filter, fixtures, hardware_map, expected',
     TESTDATA_5,
-    ids=['windows', 'build only', 'skip slow', 'pytest harness', 'sim', 'no sim', 'hardware map']
+    ids=['windows native', 'windows', 'build only', 'skip slow', 'pytest harness',
+         'sim', 'no sim', 'hardware map']
 )
 @pytest.mark.parametrize('testinstance', [{'testsuite_kind': 'tests'}], indirect=True)
 def test_testinstance_check_runnable(

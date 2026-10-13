@@ -51,6 +51,7 @@ if version.parse(elftools.__version__) < version.parse('0.24'):
 if sys.platform == 'linux':
     from twisterlib.jobserver import GNUMakeJobClient, GNUMakeJobServer, JobClient
 
+from coff_parser import CoffFile
 from domains import Domains
 from macho_parser import MachOFile
 from twisterlib.coverage import run_coverage_instance
@@ -1066,8 +1067,24 @@ class ProjectBuilder(FilterBuilder):
 
     @staticmethod
     def image_symbol_names(image_file):
-        """Yield the symbol names of a built image, ELF or Mach-O."""
+        """Yield symbol names from an ELF, Mach-O, i386 COFF, or PE32 file."""
         with open(image_file, "rb") as image_fp:
+            magic = image_fp.read(2)
+            image_fp.seek(0)
+            if magic in (b"MZ", b"\x4c\x01"):
+                coff = CoffFile(image_fp.read())
+                for symbol in coff.symbols.values():
+                    # Section definitions retain input names after a relocatable link.
+                    if (
+                        symbol.storage == 3
+                        and symbol.type == 0
+                        and symbol.aux_count > 0
+                        and symbol.section_index > 0
+                    ):
+                        continue
+                    yield symbol.name
+                return
+
             if MachOFile.is_macho(image_fp):
                 yield from (symbol.name for symbol in MachOFile(image_fp).symbols())
                 return

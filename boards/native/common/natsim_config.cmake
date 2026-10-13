@@ -20,7 +20,8 @@ endif()
 
 set(nsi_boost_context_includes "")
 set(nsi_boost_context_lib "")
-if(CONFIG_NATIVE_SIMULATOR_COROUTINE_IMPLEMENTATION_BOOST_CONTEXT)
+# The Windows runner finds Boost.Context itself.
+if(CONFIG_NATIVE_SIMULATOR_COROUTINE_IMPLEMENTATION_BOOST_CONTEXT AND NOT CMAKE_HOST_WIN32)
   find_package(Boost REQUIRED COMPONENTS context)
   set(nsi_boost_context_include_list ${Boost_INCLUDE_DIRS})
   list(TRANSFORM nsi_boost_context_include_list PREPEND "-I")
@@ -50,6 +51,11 @@ if(CMAKE_HOST_APPLE)
     "NSI_EMBSW_CTOR_SECTION:=zinit_array"
     "NSI_EMBSW_CTOR_ID_EXPR:=s/^___zephyr_init_array_start_\\([0-9][0-9]*\\)$$/\\1/p"
   )
+endif()
+
+if(CMAKE_HOST_WIN32)
+  # The isolated runner receives the interface after all libraries are configured.
+  return()
 endif()
 
 set(nsi_config_content

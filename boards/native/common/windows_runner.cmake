@@ -1,16 +1,37 @@
 # SPDX-FileCopyrightText: Copyright The Zephyr Project Contributors
 # SPDX-License-Identifier: Apache-2.0
 
+option(NATIVE_SIM_FIBER_SESSION_EXTERNAL "Use a host-owned Fibers session provider" OFF)
+if(NATIVE_SIM_FIBER_SESSION_EXTERNAL AND CONFIG_BUILD_OUTPUT_EXE)
+  message(FATAL_ERROR "External Fibers session provider requires CONFIG_BUILD_OUTPUT_EXE=n.")
+endif()
+
 # Export only the runner interface, not Zephyr's directory flags or include paths.
 set(nsi_runner_dir "${APPLICATION_BINARY_DIR}/zephyr/NSI")
 set(nsi_runner_build "${nsi_runner_dir}/build")
 set(nsi_runner_config "${nsi_runner_dir}/runner-config.cmake")
 set(nsi_runner_content "")
-macro(nsi_runner_export name value)
-  string(APPEND nsi_runner_content "set(${name} [====[${value}]====])\n")
-endmacro()
+function(nsi_runner_export name value)
+  # Evaluate values into data files, never into CMake source code.
+  # An explicit trailing newline makes native newline conversion deterministic.
+  file(GENERATE OUTPUT "${nsi_runner_dir}/${name}.txt" CONTENT "${value}\n"
+    NEWLINE_STYLE UNIX
+    CONDITION "$<COMPILE_LANGUAGE:C>"
+    TARGET native_simulator
+  )
+  string(APPEND nsi_runner_content
+    "file(READ \"\${CMAKE_CURRENT_LIST_DIR}/${name}.txt\" ${name})\n"
+    "string(LENGTH \"\${${name}}\" nsi_runner_value_length)\n"
+    "math(EXPR nsi_runner_value_length \"\${nsi_runner_value_length} - 1\")\n"
+    "string(SUBSTRING \"\${${name}}\" 0 \${nsi_runner_value_length} ${name})\n"
+    "set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS "
+    "\"\${CMAKE_CURRENT_LIST_DIR}/${name}.txt\")\n"
+  )
+  set(nsi_runner_content "${nsi_runner_content}" PARENT_SCOPE)
+endfunction()
 
-foreach(tool C_COMPILER C_COMPILER_LAUNCHER AR RANLIB OBJCOPY MAKE_PROGRAM)
+foreach(tool C_COMPILER C_COMPILER_LAUNCHER CXX_COMPILER CXX_COMPILER_LAUNCHER AR RANLIB OBJCOPY
+    MAKE_PROGRAM)
   nsi_runner_export(CMAKE_${tool} "${CMAKE_${tool}}")
 endforeach()
 nsi_runner_export(NSI_DIR "${NSI_DIR}")
@@ -19,6 +40,33 @@ nsi_runner_export(NSI_COFF_HELPER "${ZEPHYR_BASE}/scripts/build/localize_coff.py
 nsi_runner_export(NSI_EMBEDDED "${PROJECT_BINARY_DIR}/${KERNEL_ELF_NAME}")
 nsi_runner_export(NSI_EXE "${PROJECT_BINARY_DIR}/${KERNEL_EXE_NAME}")
 nsi_runner_export(NSI_BUILD_EXE "${CONFIG_BUILD_OUTPUT_EXE}")
+nsi_runner_export(NSI_FIBER_SESSION_EXTERNAL "${NATIVE_SIM_FIBER_SESSION_EXTERNAL}")
+nsi_runner_export(NSI_NCE_BACKEND
+  "$<IF:$<BOOL:${CONFIG_NATIVE_SIMULATOR_NCE_BACKEND_COROUTINES}>,coroutines,pthreads>")
+nsi_runner_export(NSI_NCT_BACKEND
+  "$<IF:$<BOOL:${CONFIG_NATIVE_SIMULATOR_NCT_BACKEND_COROUTINES}>,coroutines,pthreads>")
+set(nsi_coro_backend unsupported)
+if(CONFIG_NATIVE_SIMULATOR_COROUTINE_IMPLEMENTATION_WINDOWS_FIBERS)
+  set(nsi_coro_backend fibers)
+elseif(CONFIG_NATIVE_SIMULATOR_COROUTINE_IMPLEMENTATION_BOOST_CONTEXT)
+  set(nsi_coro_backend boost)
+elseif(CONFIG_NATIVE_SIMULATOR_COROUTINE_IMPLEMENTATION_ASM)
+  set(nsi_coro_backend asm)
+endif()
+nsi_runner_export(NSI_CORO_BACKEND "${nsi_coro_backend}")
+
+# The C++ Boost.Context primitive needs the headers and the static library.
+set(nsi_boost_include_dirs "")
+set(nsi_boost_context_lib "")
+if(CONFIG_NATIVE_SIMULATOR_NCT_BACKEND_COROUTINES AND
+   CONFIG_NATIVE_SIMULATOR_COROUTINE_IMPLEMENTATION_BOOST_CONTEXT)
+  # The runner interface is evaluated in the scope of another directory.
+  find_package(Boost CONFIG REQUIRED COMPONENTS context GLOBAL)
+  set(nsi_boost_include_dirs "$<TARGET_PROPERTY:Boost::context,INTERFACE_INCLUDE_DIRECTORIES>")
+  set(nsi_boost_context_lib "$<TARGET_FILE:Boost::context>")
+endif()
+nsi_runner_export(NSI_BOOST_INCLUDE_DIRS "${nsi_boost_include_dirs}")
+nsi_runner_export(NSI_BOOST_CONTEXT_LIB "${nsi_boost_context_lib}")
 
 foreach(property
     INTERFACE_SOURCES

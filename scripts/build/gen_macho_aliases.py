@@ -18,6 +18,9 @@ import subprocess
 import sys
 from pathlib import Path
 
+from iter_sections import parse_tagged_items
+from order_macho_sections import descendants, object_metadata, section_names
+
 # A bound of the section <name> is _<name>_list_start and so on, and Mach-O
 # prefixes a symbol with one more underscore
 BOUND_RE = re.compile(r"^__(?P<name>.+)_(?P<bound>list_start|list_end|ext_end)$")
@@ -49,10 +52,25 @@ def undefined_bounds(nm, image):
     return sorted(set(bounds))
 
 
+def bound_target(name, bound, mapping, parent_children, present):
+    """Return the section and boundary covering an API class or iterable table."""
+    target_name = name
+    kind = BOUND_KIND[bound]
+    members = [child for child in descendants(name, parent_children) if mapping[child] in present]
+    if members:
+        if bound == "ext_end":
+            target_name = members[-1]
+        elif mapping[name] not in present:
+            target_name = members[0]
+            kind = "start"
+    return f"section${kind}$__DATA${mapping[target_name]}"
+
+
 def parse_args():
     parser = argparse.ArgumentParser(description=__doc__, allow_abbrev=False)
     parser.add_argument("--image", required=True, type=Path)
     parser.add_argument("--mapping", required=True, type=Path)
+    parser.add_argument("--struct-tags", type=Path)
     parser.add_argument("--nm", required=True, type=Path)
     parser.add_argument("--output", required=True, type=Path)
     return parser.parse_args()
@@ -62,6 +80,13 @@ def main():
     args = parse_args()
     mapping = read_mapping(args.mapping)
     bounds = undefined_bounds(args.nm, args.image)
+    parent_children = {}
+    present = set()
+    if args.struct_tags is not None:
+        _, parent_children, _ = parse_tagged_items(args.struct_tags, "__subsystem")
+        if parent_children:
+            _, _, sections, _ = object_metadata(args.image.read_bytes())
+            present = section_names(sections)
 
     missing = sorted({name for name, _ in bounds} - mapping.keys())
     if missing:
@@ -78,7 +103,7 @@ def main():
         "",
     ]
     for name, bound in bounds:
-        target = f"section${BOUND_KIND[bound]}$__DATA${mapping[name]}"
+        target = bound_target(name, bound, mapping, parent_children, present)
         lines.append(f'MACHO_ALIAS(_{name}_{bound}, "{target}");')
     lines.extend(["", "#endif /* __APPLE__ */", ""])
 

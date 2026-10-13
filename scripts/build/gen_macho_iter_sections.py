@@ -92,10 +92,8 @@ def write_outputs(mapping, header_path, aliases_path, alias_names):
         short_name = mapping[name]
         alias_lines.append(f'MACHO_ALIAS(_{name}_list_start, "section$start$__DATA${short_name}");')
         alias_lines.append(f'MACHO_ALIAS(_{name}_list_end, "section$end$__DATA${short_name}");')
-        # Device API classes also have an _ext_end bound, which on ELF covers the
-        # extending classes nested in the same output section. Each class has its
-        # own Mach-O section, so it can only cover the class itself: a device with
-        # an extending API is not recognised as an instance of the base class.
+        # Image-specific device API inheritance bounds are emitted by
+        # gen_macho_aliases.py after the API sections have been ordered.
         alias_lines.append(f'MACHO_ALIAS(_{name}_ext_end, "section$end$__DATA${short_name}");')
     alias_lines.extend(["", "#endif /* __APPLE__ */", ""])
     aliases_path.write_text("\n".join(alias_lines), encoding="utf-8")

@@ -1,0 +1,27 @@
+# SPDX-FileCopyrightText: Copyright The Zephyr Project Contributors
+# SPDX-License-Identifier: Apache-2.0
+common:
+  platform_allow: native_sim/native
+  filter: OS == "Windows_NT"
+  extra_args:
+    - NATIVE_SIM_EXPERIMENTAL_WINDOWS=ON
+  extra_configs:
+    - CONFIG_NATIVE_SIMULATOR_NCT_BACKEND_COROUTINES=y
+  tags:
+    - kernel
+    - native_sim
+tests:
+  boards.native_sim.windows_coroutines.asm_nct:
+    extra_configs:
+      - CONFIG_NATIVE_SIMULATOR_COROUTINE_IMPLEMENTATION_ASM=y
+  boards.native_sim.windows_coroutines.asm:
+    extra_configs:
+      - CONFIG_NATIVE_SIMULATOR_COROUTINE_IMPLEMENTATION_ASM=y
+      - CONFIG_NATIVE_SIMULATOR_NCE_BACKEND_COROUTINES=y
+  boards.native_sim.windows_coroutines.boost_nct:
+    extra_configs:
+      - CONFIG_NATIVE_SIMULATOR_COROUTINE_IMPLEMENTATION_BOOST_CONTEXT=y
+  boards.native_sim.windows_coroutines.boost:
+    extra_configs:
+      - CONFIG_NATIVE_SIMULATOR_COROUTINE_IMPLEMENTATION_BOOST_CONTEXT=y
+      - CONFIG_NATIVE_SIMULATOR_NCE_BACKEND_COROUTINES=y

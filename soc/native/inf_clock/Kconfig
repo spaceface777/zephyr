@@ -99,7 +99,7 @@ config NATIVE_SIMULATOR_NCE_BACKEND_COROUTINES
 endchoice
 
 choice NATIVE_SIMULATOR_COROUTINE_IMPLEMENTATION
-	prompt "Stackful coroutine primitive"
+	prompt "Stackful context implementation"
 	depends on NATIVE_SIMULATOR_NCT_BACKEND_COROUTINES
 	default NATIVE_SIMULATOR_COROUTINE_IMPLEMENTATION_ASM
 
@@ -108,7 +108,9 @@ config NATIVE_SIMULATOR_COROUTINE_IMPLEMENTATION_ASM
 	help
 	  Use the small native_sim assembly switch which saves the host ABI's
 	  callee-saved state and changes stacks directly.
-	  Supported on x86-64 SysV, i386 SysV and AArch64 AAPCS64.
+	  Supported on x86-64 SysV, i386 SysV, i386 Windows and AArch64 AAPCS64.
+	  On Windows, the switch also exchanges the stack and exception fields of
+	  the thread information block.
 
 config NATIVE_SIMULATOR_COROUTINE_IMPLEMENTATION_UCONTEXT
 	bool "ucontext"
@@ -129,11 +131,28 @@ config NATIVE_SIMULATOR_COROUTINE_IMPLEMENTATION_LONGJMP
 	  implements jmp_buf. It is known to work with glibc, where it requires
 	  building that one file without _FORTIFY_SOURCE.
 
+config NATIVE_SIMULATOR_COROUTINE_IMPLEMENTATION_WINDOWS_FIBERS
+	bool "Experimental Windows Fibers context manager"
+	help
+	  Use Win32 Fibers with coroutine NCT on native Windows. Select either
+	  pthread NCE or coroutine NCE for same-thread HW and SW execution.
+	  Windows owns the stacks and reusable handles. This implementation
+	  supplies the context-manager interface, not the caller-owned-stack
+	  coroutine primitive. Native Windows CMake builds must explicitly enable
+	  NATIVE_SIM_EXPERIMENTAL_WINDOWS. Other hosts reject this selection.
+
+	  Full Fibers releases child stacks on the host root after CPU termination.
+	  Explicit shared sessions support serial localized domains. Pthread NCE
+	  retains its CPU fiber domain until process exit. Reboot, thread migration,
+	  and native unused-stack accounting are not supported.
+
 config NATIVE_SIMULATOR_COROUTINE_IMPLEMENTATION_BOOST_CONTEXT
 	bool "Boost.Context fcontext"
 	help
 	  Use Boost.Context's low-level fcontext primitive. Selecting this option
-	  adds a host build dependency on Boost.Context.
+	  adds a host build dependency on Boost.Context. Native Windows builds need
+	  a static Boost.Context library built for i686 MinGW, found through
+	  Boost's CMake package files.
 
 endchoice
 
