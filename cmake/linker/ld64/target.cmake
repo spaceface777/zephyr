@@ -4,6 +4,10 @@
 # it takes neither a linker script nor --whole-archive, and spells -Map -map.
 include(${ZEPHYR_BASE}/cmake/linker/ld/target.cmake)
 
+# The Generic system defines no whole-archive link feature. ld64 spells it -force_load.
+set(CMAKE_LINK_LIBRARY_USING_WHOLE_ARCHIVE "LINKER:-force_load,<LIB_ITEM>")
+set(CMAKE_LINK_LIBRARY_USING_WHOLE_ARCHIVE_SUPPORTED TRUE)
+
 # Link a target to given libraries with Darwin argument order
 #
 # Usage:
@@ -24,22 +28,13 @@ function(toolchain_ld_link_elf)
     ${ARGN}                                                   # input args to parse
   )
 
-  # ld64 has no --whole-archive, each archive is named with -force_load instead
-  set(whole_archive_flags)
-  foreach(lib ${WHOLE_ARCHIVE_LIBS})
-    list(APPEND whole_archive_flags ${LINKERFLAGPREFIX},-force_load,$<TARGET_FILE:${lib}>)
-  endforeach()
-  if(WHOLE_ARCHIVE_LIBS)
-    add_dependencies(${TOOLCHAIN_LD_LINK_ELF_TARGET_ELF} ${WHOLE_ARCHIVE_LIBS})
-  endif()
-
   target_link_libraries(
     ${TOOLCHAIN_LD_LINK_ELF_TARGET_ELF}
     ${TOOLCHAIN_LD_LINK_ELF_LIBRARIES_PRE_SCRIPT}
     ${TOOLCHAIN_LD_LINK_ELF_LIBRARIES_POST_SCRIPT}
 
     ${LINKERFLAGPREFIX},-map,${TOOLCHAIN_LD_LINK_ELF_OUTPUT_MAP}
-    ${whole_archive_flags}
+    "$<LINK_LIBRARY:WHOLE_ARCHIVE,${WHOLE_ARCHIVE_LIBS}>"
     ${NO_WHOLE_ARCHIVE_LIBS}
     $<TARGET_OBJECTS:${OFFSETS_LIB}>
     -L${PROJECT_BINARY_DIR}
