@@ -32,7 +32,12 @@ static unsigned int number_of_events;
 static unsigned int next_timer_index;
 static uint64_t next_timer_time;
 
-#if defined(_WIN32)
+#if defined(NSI_NO_SIGNAL_HANDLERS)
+static bool nsi_hws_end_requested(void)
+{
+	return false;
+}
+#elif defined(_WIN32)
 static LONG signaled_end;
 static bool console_handler_registered;
 
@@ -196,7 +201,9 @@ void nsi_hws_init(void)
 	nsi_hws_backend_init();
 	number_of_events = nsi_hws_backend_event_count;
 
+#if !defined(NSI_NO_SIGNAL_HANDLERS)
 	nsi_hws_set_sig_handler();
+#endif
 	nsi_hws_find_next_event();
 }
 
@@ -208,7 +215,7 @@ void nsi_hws_init(void)
  */
 void nsi_hws_cleanup(void)
 {
-#if defined(_WIN32)
+#if defined(_WIN32) && !defined(NSI_NO_SIGNAL_HANDLERS)
 	if (console_handler_registered) {
 		if (SetConsoleCtrlHandler(nsi_hws_console_handler, FALSE) == 0) {
 			nsi_print_warning("Cannot remove console handler: Windows error %lu\n",

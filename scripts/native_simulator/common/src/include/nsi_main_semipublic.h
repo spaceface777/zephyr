@@ -19,6 +19,9 @@ extern "C" {
  * An example of such a case is LLVMs fuzzing support. For this one sets
  * NSI_NO_MAIN, and provides an specialized main() or hooks into the tooling
  * provided main().
+ * Define NSI_NO_SIGNAL_HANDLERS when compiling the runner if the embedding
+ * application owns process signal handling. This also disables Windows console
+ * handler registration. The simulator still honors its configured stop time.
  *
  * These APIs should be used with care, and not be used when the native
  * simulator main() is built in.
