@@ -22,6 +22,12 @@
 extern "C" {
 #endif
 
+#if defined(_WIN32)
+/* MinGW has no POSIX random API. The Windows runner supplies compatible entry points. */
+long random(void);
+void srandom(unsigned int seed);
+#endif
+
 void *nsi_host_calloc(unsigned long nmemb, unsigned long size);
 int nsi_host_close(int fd);
 /* void nsi_host_exit (int status); Use nsi_exit() instead */

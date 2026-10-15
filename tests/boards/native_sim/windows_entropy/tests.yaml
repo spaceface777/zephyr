@@ -1,0 +1,17 @@
+# SPDX-FileCopyrightText: Copyright The Zephyr Project Contributors
+# SPDX-License-Identifier: Apache-2.0
+common:
+  platform_allow: native_sim/native
+  filter: OS == "Windows_NT"
+  extra_args:
+    - NATIVE_SIM_EXPERIMENTAL_WINDOWS=ON
+  tags:
+    - drivers
+    - entropy
+    - native_sim
+tests:
+  boards.native_sim.windows_entropy: {}
+  boards.native_sim.windows_entropy.coroutines:
+    extra_configs:
+      - CONFIG_NATIVE_SIMULATOR_NCE_BACKEND_COROUTINES=y
+      - CONFIG_NATIVE_SIMULATOR_NCT_BACKEND_COROUTINES=y

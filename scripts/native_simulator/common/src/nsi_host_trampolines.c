@@ -10,6 +10,7 @@
 #include <unistd.h>
 #include <fcntl.h>
 #include <string.h>
+#include "nsi_host_trampolines.h"
 
 void *nsi_host_calloc(unsigned long nmemb, unsigned long size)
 {
@@ -63,12 +64,10 @@ int nsi_host_open(const char *pathname, int flags)
 	return open(pathname, flags);
 }
 
-#if !defined(_WIN32)
 long nsi_host_random(void)
 {
 	return random();
 }
-#endif
 
 long nsi_host_read(int fd, void *buffer, unsigned long size)
 {
@@ -85,12 +84,12 @@ int nsi_host_setenv(const char *name, const char *value, int overwrite)
 {
 	return setenv(name, value, overwrite);
 }
+#endif
 
 void nsi_host_srandom(unsigned int seed)
 {
 	srandom(seed);
 }
-#endif
 
 char *nsi_host_strdup(const char *s)
 {

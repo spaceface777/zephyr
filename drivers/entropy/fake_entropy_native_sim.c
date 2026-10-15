@@ -117,7 +117,7 @@ static void add_fake_entropy_option(void)
 			.option = "seed-random",
 			.type = 'b',
 			.dest = (void *)&seed_random,
-			.descript = "Seed the random generator from /dev/urandom. "
+			.descript = "Seed the random generator from host system entropy. "
 				    "Note your test may not be reproducible if you set this option"
 		},
 		ARG_TABLE_ENDMARKER

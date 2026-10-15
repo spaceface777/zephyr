@@ -10,6 +10,10 @@
 #define _DARWIN_C_SOURCE
 #endif
 
+#ifdef _WIN32
+#define _CRT_RAND_S
+#endif
+
 #undef _XOPEN_SOURCE
 #define _XOPEN_SOURCE 700
 
@@ -17,10 +21,11 @@
 #include <stdlib.h>
 #include <errno.h>
 #include <string.h>
-#ifndef __APPLE__
+#if !defined(__APPLE__) && !defined(_WIN32)
 #include <sys/random.h>
 #endif
 #include "nsi_tracing.h"
+#include "nsi_host_trampolines.h"
 
 void entropy_native_seed(unsigned int seed, bool seed_random)
 {
@@ -28,7 +33,14 @@ void entropy_native_seed(unsigned int seed, bool seed_random)
 		srandom(seed);
 	} else {
 		unsigned int buf;
-#ifdef __APPLE__
+#ifdef _WIN32
+		int err = rand_s(&buf);
+
+		if (err != 0) {
+			nsi_print_error_and_exit("Could not get random number (%i, %s)\n",
+						 err, strerror(err));
+		}
+#elif defined(__APPLE__)
 		arc4random_buf(&buf, sizeof(buf));
 #else
 		int err = getrandom(&buf, sizeof(buf), 0);

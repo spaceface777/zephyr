@@ -75,9 +75,14 @@ NCE and NCT use pthreads by default.
 The selected MinGW compiler headers depend on its host C runtime.
 Other C library choices are not supported in this mode.
 Its scope is console output, simulated clock events, kernel scheduling, and clean exit.
-Real-time pacing, C++, entropy, file-backed devices, host networking, reboot, profiling, and
+Real-time pacing, C++, file-backed devices, host networking, reboot, profiling, and
 sanitizers are outside this scope.
 The build does not change board defaults to disable these features.
+
+The native test entropy driver supports ``--seed`` and ``--seed-random`` on Windows.
+A fixed seed reproduces the sequence. Windows sequences can differ from POSIX hosts.
+``--seed-random`` obtains a seed from the Windows C runtime's ``rand_s()`` and prints it for replay.
+The driver produces test data, not cryptographic entropy.
 
 Build dependencies:
 
