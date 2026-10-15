@@ -106,9 +106,18 @@ class CoffFile:
                     if any(offset < stop and end > start for start, stop in raw_extents):
                         raise ValueError("Overlapping COFF/PE raw sections")
                     raw_extents.append((offset, end))
+            if flags & 0x01000000:
+                if reloc_count != 0xFFFF or reloc == 0:
+                    raise ValueError("Invalid COFF relocation overflow header")
+                total, target, kind = self.unpack("<IIH", reloc)
+                if total <= 0xFFFF or target != 0 or kind != 0:
+                    raise ValueError("Invalid COFF relocation overflow count")
+                # The extended count includes this first, non-relocating record.
+                reloc += 10
+                reloc_count = total - 1
             if reloc_count != 0:
-                if reloc == 0 or flags & 0x01000000:
-                    raise ValueError("Unsupported COFF relocation table")
+                if reloc == 0:
+                    raise ValueError("Invalid COFF relocation table offset")
                 self.read(reloc, reloc_count * 10)
                 relocations.append((reloc, reloc_count, size, rva))
             self.sections[index] = CoffSection(
