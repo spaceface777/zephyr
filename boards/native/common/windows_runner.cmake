@@ -120,12 +120,25 @@ add_custom_target(runner_lib
 add_dependencies(runner_lib native_simulator)
 set_property(DIRECTORY APPEND PROPERTY ADDITIONAL_CLEAN_FILES "${nsi_runner_build}")
 
+# Build the CPU object and layout for custom image links without linking an executable.
+add_custom_target(native_runner_link_inputs
+  COMMAND ${nsi_runner_configure} -DNSI_LINK_INPUTS_READY=ON
+  COMMAND "${CMAKE_COMMAND}" --build "${nsi_runner_build}" --target link_inputs
+  DEPENDS runner_lib ${logical_target_for_zephyr_elf} ${nsi_runner_dependencies}
+    $<TARGET_GENEX_EVAL:native_simulator,${nsi_runner_library_files}>
+  BYPRODUCTS
+    "${nsi_runner_build}/embedded.loc_cpusw.o"
+    "${nsi_runner_build}/embedded.loc_cpusw.o.ld"
+    "${nsi_runner_build}/linker_script.ld"
+    "${nsi_runner_build}/windows_linker_script.ld"
+  VERBATIM
+  USES_TERMINAL
+)
+
 if(CONFIG_BUILD_OUTPUT_EXE)
   add_custom_target(native_runner_executable ALL
-    COMMAND ${nsi_runner_configure} -DNSI_LINK_INPUTS_READY=ON
     COMMAND "${CMAKE_COMMAND}" --build "${nsi_runner_build}" --target link_with_esw
-    DEPENDS runner_lib ${logical_target_for_zephyr_elf} ${nsi_runner_dependencies}
-      $<TARGET_GENEX_EVAL:native_simulator,${nsi_runner_library_files}>
+    DEPENDS native_runner_link_inputs
     BYPRODUCTS "${PROJECT_BINARY_DIR}/${KERNEL_EXE_NAME}"
     VERBATIM
     USES_TERMINAL

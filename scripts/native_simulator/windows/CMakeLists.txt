@@ -119,8 +119,7 @@ add_custom_target(runner_lib DEPENDS runner)
 # A first runner-only build can precede the embedded image. Once its sidecar
 # exists, retain the final graph across configurations so Ninja keeps depfile state.
 # The final build requires the sidecar and must not skip missing inputs.
-if(NOT NSI_BUILD_EXE OR
-   (NOT NSI_LINK_INPUTS_READY AND NOT EXISTS "${NSI_EMBEDDED}.coff-inputs"))
+if(NOT NSI_LINK_INPUTS_READY AND NOT EXISTS "${NSI_EMBEDDED}.coff-inputs")
   return()
 endif()
 
@@ -158,6 +157,15 @@ add_custom_command(OUTPUT "${final_script}"
     "${CMAKE_CURRENT_LIST_DIR}/linker_script.cmake"
   VERBATIM
 )
+
+# Custom image links need these inputs even when the runner does not link an executable.
+add_custom_target(link_inputs DEPENDS
+  "${localized}"
+  "${final_script}"
+)
+if(NOT NSI_BUILD_EXE)
+  return()
+endif()
 
 # CMake's SHELL: option syntax uses UNIX_COMMAND parsing on every host.
 set(link_options "")
