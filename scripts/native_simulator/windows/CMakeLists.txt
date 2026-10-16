@@ -29,7 +29,6 @@ file(GLOB runner_sources CONFIGURE_DEPENDS
 list(APPEND runner_sources "${CMAKE_CURRENT_LIST_DIR}/random.c")
 # Mach-O section adapters have no implementation on the PE host.
 list(REMOVE_ITEM runner_sources
-  "${NSI_DIR}/common/src/macho_ranges.c"
   "${NSI_DIR}/common/src/nsi_hw_scheduler_macho.c"
 )
 

@@ -167,7 +167,6 @@ RUNNER_LIB:=runner.a
 SRCS:=$(shell ls ${NSI_PATH}common/src/*.c)
 ifneq (${HOST_OS},Darwin)
   SRCS:=$(filter-out \
-    ${NSI_PATH}common/src/macho_ranges.c \
     ${NSI_PATH}common/src/nsi_hw_scheduler_macho.c,${SRCS})
 endif
 ifdef NSI_NATIVE

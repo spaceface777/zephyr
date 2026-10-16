@@ -6547,6 +6547,7 @@ function(zephyr_generate_macho_iterable_sections)
   set(header_file ${header_dir}/macho_iter_sections.h)
   set(alias_file ${output_dir}/macho_iter_sections.c)
   set(image_alias_file ${output_dir}/macho_image_bounds.c)
+  set(image_alias_list ${output_dir}/macho_image_bounds.aliases)
 
   file(MAKE_DIRECTORY ${output_dir} ${header_dir})
 
@@ -6632,7 +6633,7 @@ function(zephyr_generate_macho_iterable_sections)
     # there are far too many iterable sections to emit them all: see
     # gen_macho_aliases.py.
     add_custom_command(
-      OUTPUT ${image_alias_file}
+      OUTPUT ${image_alias_file} ${image_alias_list}
       COMMAND ${PYTHON_EXECUTABLE}
               ${ZEPHYR_BASE}/scripts/build/gen_macho_aliases.py
               --image $<TARGET_FILE:${logical_target_for_zephyr_elf}>
@@ -6640,6 +6641,7 @@ function(zephyr_generate_macho_iterable_sections)
               --struct-tags ${MACHO_STRUCT_TAGS}
               --nm ${CMAKE_NM}
               --output ${image_alias_file}
+              --linker-aliases ${image_alias_list}
       DEPENDS
         ${ZEPHYR_BASE}/scripts/build/gen_macho_aliases.py
         ${ZEPHYR_BASE}/scripts/build/order_macho_sections.py
@@ -6648,7 +6650,8 @@ function(zephyr_generate_macho_iterable_sections)
         ${logical_target_for_zephyr_elf}
       VERBATIM
     )
-    add_custom_target(${macho_generation_target}_bounds DEPENDS ${image_alias_file})
+    add_custom_target(${macho_generation_target}_bounds
+      DEPENDS ${image_alias_file} ${image_alias_list})
     add_dependencies(${macho_generation_target}_bounds ${macho_generation_target})
     if(TARGET native_runner_executable)
       add_dependencies(native_runner_executable ${macho_generation_target}_bounds)
@@ -6685,7 +6688,7 @@ function(zephyr_generate_macho_iterable_sections)
   get_target_property(macho_target_type ${MACHO_TARGET} TYPE)
   if(DEFINED MACHO_STRUCT_TAGS)
     # The bounds of this image, the only ones emitted, come from the second pass
-    target_sources(${MACHO_TARGET} INTERFACE ${image_alias_file})
+    target_link_options(${MACHO_TARGET} INTERFACE "-Wl,-alias_list,${image_alias_list}")
   elseif("${macho_target_type}" STREQUAL "INTERFACE_LIBRARY")
     target_sources(${MACHO_TARGET} INTERFACE ${alias_file})
   else()

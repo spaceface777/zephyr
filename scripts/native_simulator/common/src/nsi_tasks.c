@@ -17,9 +17,9 @@
 
 /* Keep bounds materialized and ordered for levels without registered tasks. */
 #define NSI_TASK_MARKERS(level) \
-	void (*const NSI_CONCAT(__nsi_task_range_start_, level))(void) \
+	static void (*const NSI_CONCAT(__nsi_task_range_start_, level))(void) \
 	NSI_SECTION_DATA(NSI_TASK_MACHO_SEC_LEVEL(level)) = NULL; \
-	void (*const NSI_CONCAT(__nsi_task_range_end_, level))(void) \
+	static void (*const NSI_CONCAT(__nsi_task_range_end_, level))(void) \
 	NSI_SECTION_DATA(NSI_TASK_MACHO_SEC_LEVEL(level)) = NULL
 
 NSI_TASK_MARKERS(PRE_BOOT_1);
@@ -31,27 +31,15 @@ NSI_TASK_MARKERS(ON_EXIT_PRE);
 NSI_TASK_MARKERS(ON_EXIT_POST);
 
 struct nsi_task_range {
-	void (**start)(void);
-	void (**end)(void);
+	void (*const *start)(void);
+	void (*const *end)(void);
 };
 
 #define NSI_TASK_RANGE(level) \
-	{ __nsi_##level##_tasks_start, __nsi_##level##_tasks_end }
-
-extern void (*__nsi_PRE_BOOT_1_tasks_start[])(void);
-extern void (*__nsi_PRE_BOOT_1_tasks_end[])(void);
-extern void (*__nsi_PRE_BOOT_2_tasks_start[])(void);
-extern void (*__nsi_PRE_BOOT_2_tasks_end[])(void);
-extern void (*__nsi_HW_INIT_tasks_start[])(void);
-extern void (*__nsi_HW_INIT_tasks_end[])(void);
-extern void (*__nsi_PRE_BOOT_3_tasks_start[])(void);
-extern void (*__nsi_PRE_BOOT_3_tasks_end[])(void);
-extern void (*__nsi_FIRST_SLEEP_tasks_start[])(void);
-extern void (*__nsi_FIRST_SLEEP_tasks_end[])(void);
-extern void (*__nsi_ON_EXIT_PRE_tasks_start[])(void);
-extern void (*__nsi_ON_EXIT_PRE_tasks_end[])(void);
-extern void (*__nsi_ON_EXIT_POST_tasks_start[])(void);
-extern void (*__nsi_ON_EXIT_POST_tasks_end[])(void);
+	{ \
+		&NSI_CONCAT(__nsi_task_range_start_, level), \
+		&NSI_CONCAT(__nsi_task_range_end_, level), \
+	}
 
 void nsi_run_tasks(int level)
 {
@@ -64,7 +52,7 @@ void nsi_run_tasks(int level)
 		NSI_TASK_RANGE(ON_EXIT_PRE),
 		NSI_TASK_RANGE(ON_EXIT_POST),
 	};
-	void (**fptr)(void);
+	void (*const *fptr)(void);
 
 	if ((level < 0) || (level >= (int)NSI_ARRAY_SIZE(ranges))) {
 		return;

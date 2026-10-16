@@ -10,8 +10,10 @@
 #include "nsi_hws_models_if.h"
 
 #ifdef __APPLE__
-extern struct nsi_hw_event_st __nsi_hw_events_start[];
-extern struct nsi_hw_event_st __nsi_hw_events_end[];
+extern struct nsi_hw_event_st __nsi_hw_events_start[]
+	__asm("section$start$__DATA$nsihwe");
+extern struct nsi_hw_event_st __nsi_hw_events_end[]
+	__asm("section$end$__DATA$nsihwe");
 extern unsigned int nsi_hws_backend_event_count;
 
 #define nsi_hws_events __nsi_hw_events_start

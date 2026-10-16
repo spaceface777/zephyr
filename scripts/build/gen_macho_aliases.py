@@ -73,6 +73,7 @@ def parse_args():
     parser.add_argument("--struct-tags", type=Path)
     parser.add_argument("--nm", required=True, type=Path)
     parser.add_argument("--output", required=True, type=Path)
+    parser.add_argument("--linker-aliases", type=Path)
     return parser.parse_args()
 
 
@@ -94,6 +95,18 @@ def main():
             f"{args.image}: no Mach-O section is mapped for {', '.join(missing)}. "
             "The section is not one gen_macho_iter_sections.py found in the tree."
         )
+
+    if args.linker_aliases is not None:
+        # Command-line aliases bind directly to the target atom. Assembler
+        # N_INDR aliases instead produce indirect follow-on fixups, which crash
+        # ld64's order-file pass (buildFollowOnTables).
+        aliases = []
+        for name, bound in bounds:
+            target = bound_target(name, bound, mapping, parent_children, present)
+            aliases.append(f"{target} __{name}_{bound}")
+        args.linker_aliases.write_text("\n".join(aliases) + "\n", encoding="utf-8")
+        args.output.write_text("/* Bounds are supplied by the linker alias list. */\n", encoding="utf-8")
+        return
 
     lines = [
         "/* Generated file. Do not edit. */",
