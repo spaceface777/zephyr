@@ -61,7 +61,7 @@ endif()
 set(nsi_config_content
   ${nsi_config_content}
   "NSI_AR:=${CMAKE_AR}"
-  "NSI_BUILD_OPTIONS:=$<JOIN:$<TARGET_PROPERTY:native_simulator,INTERFACE_COMPILE_OPTIONS>,\ >"
+  "NSI_BUILD_OPTIONS:=$<JOIN:$<TARGET_PROPERTY:native_simulator,INTERFACE_COMPILE_OPTIONS>,\ > $<$<BOOL:$<TARGET_PROPERTY:native_simulator,INTERFACE_COMPILE_DEFINITIONS>>:-D$<JOIN:$<TARGET_PROPERTY:native_simulator,INTERFACE_COMPILE_DEFINITIONS>,\ -D>>"
   "NSI_BUILD_PATH:=${zephyr_build_path}/NSI"
   "NSI_CC:=$<$<BOOL:${launcher}>:${launcher} >${CMAKE_C_COMPILER}"
   "NSI_CXX:=$<$<BOOL:${launcher}>:${launcher} >${CMAKE_C_COMPILER}"
