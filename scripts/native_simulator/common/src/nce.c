@@ -26,12 +26,32 @@
 #include "nsi_sem.h"
 #include "nsi_safe_call.h"
 
+/*
+ * A runner without its own main() lives in a host process which may unload it
+ * after clean up. No SW pthread may then remain blocked or sleeping in runner code.
+ * nce_terminate() from the HW thread releases the SW thread which waits on sem_sw,
+ * and joins the thread which nce_boot_cpu() created.
+ * With pthread NCT, that thread is an NCT thread which nct_clean_up() joins.
+ * Coroutine NCT runs its threads on the CPU pthread stack. That pthread cannot
+ * exit from a coroutine stack, so it is left blocked as before.
+ */
+#if defined(NSI_NO_MAIN) && defined(NSI_NCT_BACKEND_PTHREADS)
+#define NCE_RELEASE_ON_TERMINATE 1
+#else
+#define NCE_RELEASE_ON_TERMINATE 0
+#endif
+
 struct nce_status_t {
 	nsi_sem_t sem_sw; /* Semaphore to hold the CPU/SW thread(s) */
 	nsi_sem_t sem_hw; /* Semaphore to hold the HW thread */
 	bool cpu_halted;
 	bool terminate; /* Are we terminating the program == cleaning up */
 	void (*start_routine)(void);
+#if NCE_RELEASE_ON_TERMINATE
+	pthread_t sw_thread; /* The thread which nce_boot_cpu() created */
+	bool sw_thread_created;
+	bool sw_released; /* Has the HW thread released and joined the SW threads */
+#endif
 };
 
 #define NCE_DEBUG_PRINTS 0
@@ -81,6 +101,27 @@ void *nce_init(void)
 	return (void *)this;
 }
 
+#if NCE_RELEASE_ON_TERMINATE
+/*
+ * Release the SW thread which waits on sem_sw in nce_halt_cpu() or nce_terminate(),
+ * so it exits, and join the thread which nce_boot_cpu() created.
+ * Can only be called from the HW thread.
+ */
+static void nce_release_sw(struct nce_status_t *this)
+{
+	if (this->sw_released) {
+		return;
+	}
+	this->sw_released = true;
+	this->terminate = true;
+
+	NSI_SAFE_CALL(nsi_sem_post(&this->sem_sw));
+	if (this->sw_thread_created) {
+		NSI_SAFE_CALL(pthread_join(this->sw_thread, NULL));
+	}
+}
+#endif
+
 /*
  * This function will:
  *
@@ -110,6 +151,11 @@ void nce_terminate(void *this_arg)
 		 * If you got here due to valgrind's leak report, please use the
 		 * provided valgrind suppression file valgrind.supp
 		 */
+#if NCE_RELEASE_ON_TERMINATE
+		if (this != NULL) {
+			nce_release_sw(this);
+		}
+#endif
 		return;
 	} else if (this->terminate == false) {
 
@@ -118,6 +164,11 @@ void nce_terminate(void *this_arg)
 
 		NSI_SAFE_CALL(nsi_sem_post(&this->sem_hw));
 
+#if NCE_RELEASE_ON_TERMINATE
+		/* Wait until the HW thread's clean up releases this thread */
+		NSI_SAFE_CALL(nce_sem_rewait(&this->sem_sw));
+		pthread_exit(NULL);
+#else
 		while (1) {
 			sleep(1);
 			/* This SW thread will wait until being cancelled from
@@ -125,6 +176,7 @@ void nce_terminate(void *this_arg)
 			 * won't really wait 1 second
 			 */
 		}
+#endif
 	}
 	/* LCOV_EXCL_STOP */
 }
@@ -169,6 +221,10 @@ void nce_boot_cpu(void *this_arg, void (*start_routine)(void))
 	pthread_t sw_thread;
 
 	NSI_SAFE_CALL(pthread_create(&sw_thread, NULL, sw_wrapper, this_arg));
+#if NCE_RELEASE_ON_TERMINATE
+	this->sw_thread = sw_thread;
+	this->sw_thread_created = true;
+#endif
 
 	nce_wake_cpu(this_arg);
 }
@@ -194,6 +250,13 @@ void nce_halt_cpu(void *this_arg)
 
 	NSI_SAFE_CALL(nsi_sem_post(&this->sem_hw));
 	NSI_SAFE_CALL(nce_sem_rewait(&this->sem_sw));
+
+#if NCE_RELEASE_ON_TERMINATE
+	if (this->terminate) {
+		/* nce_terminate() released this thread. The SW must not continue. */
+		pthread_exit(NULL);
+	}
+#endif
 
 	NCE_DEBUG("CPU awaken, HW thread held\n");
 }

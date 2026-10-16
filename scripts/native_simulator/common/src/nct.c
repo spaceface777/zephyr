@@ -98,6 +98,18 @@
  * NCT_REUSE_ABORTED_ENTRIES => don't set it by now
  */
 
+/*
+ * A runner without its own main() lives in a host process which may unload it
+ * after nct_clean_up(). The tail of each thread runs code from the runner, so
+ * clean up must then join every thread instead of leaving them to finish later.
+ * NCT_REUSE_ABORTED_ENTRIES would lose the handles of reused entries.
+ */
+#if defined(NSI_NO_MAIN) && !NCT_REUSE_ABORTED_ENTRIES
+#define NCT_JOIN_ON_CLEAN_UP 1
+#else
+#define NCT_JOIN_ON_CLEAN_UP 0
+#endif
+
 struct nct_status_t;
 
 struct threads_table_el {
@@ -233,8 +245,10 @@ static int nct_read_stack(struct nct_windows_stack *stack, bool require_committe
  */
 static void nct_exit_this_thread(void)
 {
+#if !NCT_JOIN_ON_CLEAN_UP
 	/* We detach ourselves so nobody needs to join to us */
 	pthread_detach(pthread_self());
+#endif
 	pthread_exit(NULL);
 }
 
@@ -662,6 +676,8 @@ void *nct_init(void (*fptr)(void *))
  * threads need to access it still.
  * => we prefer the supposed memory leak report from valgrind, and ensure we
  * will not hang.
+ * A runner built with NSI_NO_MAIN cannot rely on the process ending, so there
+ * this function joins all the threads (see NCT_JOIN_ON_CLEAN_UP).
  */
 void nct_clean_up(void *this_arg)
 {
@@ -687,6 +703,19 @@ void nct_clean_up(void *this_arg)
 		}
 		NSI_SAFE_CALL(nsi_sem_post(&tt_el->sema));
 	}
+
+#if NCT_JOIN_ON_CLEAN_UP
+	/*
+	 * Every released thread now exits. The thread which held the CPU is
+	 * released by nce_terminate(), which runs before this function.
+	 */
+	tt_el = this->threads_table;
+	for (int i = 0; i < this->threads_table_size; i++, tt_el = tt_el->next) {
+		if (tt_el->state != NOTUSED) {
+			NSI_SAFE_CALL(pthread_join(tt_el->thread, NULL));
+		}
+	}
+#endif
 #endif
 
 	/*
