@@ -85,6 +85,9 @@ NSI_PYTHON?=python3
 NSI_NM?=nm
 #  Mach-O symbol table editor (Darwin hosts only)
 NSI_NMEDIT?=nmedit
+#  Extra flags for intermediate Darwin relocatable links. Keep the same linker
+#  implementation as the embedded CPU SW and final image links.
+NSI_DARWIN_LD_FLAGS?=
 #  Programs appending embedded SW symbols to the linker order file. Each is run
 #  as "<prog> --output <order file> --nm <nm> --object <image> ..." after the
 #  native simulator's own entries have been written (Darwin hosts only).
@@ -306,9 +309,9 @@ ifeq (${HOST_OS},Darwin)
 	  fi; \
 	fi; \
 	if [ -n "$${init_section}" ]; then \
-	  ld -r -rename_section __DATA __mod_init_func __DATA "$${init_section}" -o $@.section $<; \
+	  ld ${NSI_DARWIN_LD_FLAGS} -r -rename_section __DATA __mod_init_func __DATA "$${init_section}" -o $@.section $<; \
 	else \
-	  ld -r -o $@.section $<; \
+	  ld ${NSI_DARWIN_LD_FLAGS} -r -o $@.section $<; \
 	fi; \
 	${NSI_NM} -m $@.section | awk \
 	  '$$2 == "(__TEXT,nsiif)" || $$2 == "(__DATA,nsiifdat)" || \
