@@ -64,6 +64,23 @@ if(NOT COMMAND compiler_file_path)
 
 endif()
 
+# Apple Clang's --print-libgcc-file-name can name a nonexistent architecture-
+# specific builtins archive. Darwin provides one universal compiler runtime.
+function(compiler_set_darwin_runtime)
+  execute_process(
+    COMMAND ${CMAKE_C_COMPILER} -print-resource-dir
+    OUTPUT_VARIABLE clang_resources
+    OUTPUT_STRIP_TRAILING_WHITESPACE
+    COMMAND_ERROR_IS_FATAL ANY
+  )
+  set(runtime "${clang_resources}/lib/darwin/libclang_rt.osx.a")
+  if(NOT EXISTS "${runtime}")
+    message(FATAL_ERROR "Apple compiler runtime not found: ${runtime}")
+  endif()
+  set_linker_property(PROPERTY lib_include_dir "")
+  set_linker_property(PROPERTY rt_library "\"${runtime}\"")
+endfunction()
+
 if(NOT COMMAND compiler_set_linker_properties)
 
   # Set the lib_include_dir and rt_library linker properties
@@ -75,6 +92,11 @@ if(NOT COMMAND compiler_set_linker_properties)
   # function in their target.cmake file
 
   function(compiler_set_linker_properties)
+    if(CMAKE_HOST_APPLE AND CMAKE_C_COMPILER_ID STREQUAL "AppleClang")
+      compiler_set_darwin_runtime()
+      return()
+    endif()
+
 
     compiler_simple_options(simple_options)
 

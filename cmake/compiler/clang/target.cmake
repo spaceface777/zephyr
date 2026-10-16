@@ -128,6 +128,10 @@ endif()
 
 # Override the default implementation in target_template.cmake.
 function(compiler_set_linker_properties)
+  if(CMAKE_HOST_APPLE AND CMAKE_C_COMPILER_ID STREQUAL "AppleClang")
+    compiler_set_darwin_runtime()
+    return()
+  endif()
 
   compiler_simple_options(simple_options)
 
