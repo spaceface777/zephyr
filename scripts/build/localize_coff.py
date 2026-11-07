@@ -8,7 +8,6 @@ import argparse
 import os
 import pathlib
 import struct
-import subprocess
 import sys
 import tempfile
 
@@ -17,7 +16,10 @@ from coff_parser import CoffFile  # noqa: E402
 
 
 def archive_members(data):
-    """Yield ordinary GNU archive members without extracting duplicate names."""
+    """Yield ordinary archive members without extracting duplicate names.
+
+    GNU ar ends long member names with "/\\n", llvm-ar's COFF archives with NUL.
+    """
     if not data.startswith(b"!<arch>\n"):
         raise ValueError("Expected an ordinary archive; thin archives are unsupported")
     pos, names = 8, None
@@ -32,7 +34,7 @@ def archive_members(data):
         member_offset = pos
         pos = end + (size & 1)
         name = header[:16].rstrip(b" ")
-        if name in (b"/", b"/SYM64/"):
+        if name in (b"/", b"/SYM64/", b"/<ECSYMBOLS>/"):
             continue
         if name == b"//":
             if names is not None:
@@ -44,12 +46,14 @@ def archive_members(data):
             if not digits.isdigit() or names is None:
                 raise ValueError("Invalid GNU archive name")
             index = int(digits)
-            if index >= len(names) or (index != 0 and names[index - 1 : index] != b"\n"):
+            if index >= len(names) or (index != 0 and names[index - 1 : index] not in b"\n\0"):
                 raise ValueError("Invalid archive name offset")
-            stop = names.find(b"/\n", index)
-            if stop < 0:
+            stops = [
+                stop for stop in (names.find(b"/\n", index), names.find(b"\0", index)) if stop >= 0
+            ]
+            if not stops:
                 raise ValueError("Unterminated archive name")
-            name = names[index:stop]
+            name = names[index : min(stops)]
         else:
             name = name.removesuffix(b"/")
         if not name or name.startswith(b"#1/"):
@@ -61,7 +65,9 @@ def weak_target(obj, symbol):
     if symbol.section_index != 0 or symbol.aux_count != 1:
         raise ValueError(f"Unsupported COFF weak record: {symbol.name}")
     target, mode = obj.unpack("<II", symbol.offset + 18)
-    if mode != 1:
+    # GCC writes IMAGE_WEAK_EXTERN_SEARCH_NOLIBRARY (1) and Clang
+    # IMAGE_WEAK_EXTERN_SEARCH_ALIAS (3). GNU ld links both as NOLIBRARY.
+    if mode not in (1, 3):
         raise ValueError(f"Unsupported COFF weak search mode: {symbol.name}")
     return target, mode
 
@@ -135,8 +141,8 @@ def repair(obj, evidence):
         if fallback.section_index > 0:
             obj.address(fallback)
         if fallback.section_index > 0 and not interface(obj, fallback):
-            # objcopy cannot localize COFF weak externals. Keep this resolved
-            # private alias at its selected definition without reindexing records.
+            # A COFF weak external cannot be local. Keep this resolved private
+            # alias at its selected definition without reindexing records.
             struct.pack_into("<Ih", data, symbol.offset + 8, fallback.value, fallback.section_index)
             data[symbol.offset + 16] = 3
             data[symbol.offset + 18 : symbol.offset + 36] = bytes(18)
@@ -152,6 +158,75 @@ def repair(obj, evidence):
         if symbol.storage == 2 and symbol.section_index != 0 and symbol.name not in public
     }
     return data, private
+
+
+def localize(data, private):
+    """Make the named external definitions static, as objcopy --localize-symbols does.
+
+    Only storage classes and COMDAT flags change, so symbol indexes, auxiliary
+    records and relocations stay valid. This needs no binutils objcopy, which LLVM toolchains
+    do not have: llvm-objcopy cannot localize COFF symbols.
+    """
+    data = bytearray(data)
+    for symbol in CoffFile(data).symbols.values():
+        if symbol.name in private and symbol.storage == 2 and symbol.section_index != 0:
+            data[symbol.offset + 16] = 3
+    return separate_comdats(data)
+
+
+def separate_comdats(data):
+    """Keep private COMDAT sections out of the final link's COMDAT selection.
+
+    The relocatable link already kept one copy of each COMDAT of the embedded
+    software. A COMDAT whose key symbol is now static would still replace the
+    runner's copies of the same COMDAT, such as Clang's .refptr stubs, and
+    leave the runner's references to the key symbol undefined. Even merged
+    correctly, such a copy can refer to the embedded software's private
+    definitions. Clear the COMDAT flag of these sections and of the sections
+    associated with them, so that each side keeps its own copy.
+    """
+    obj = CoffFile(data)
+    data = bytearray(data)
+    by_section = {}
+    for symbol in sorted(obj.symbols.values(), key=lambda symbol: symbol.index):
+        if symbol.section_index > 0:
+            by_section.setdefault(symbol.section_index, []).append(symbol)
+    separate, associative = set(), {}
+    for index, section in obj.sections.items():
+        if not section.flags & 0x1000:
+            continue
+        symbols = by_section.get(index, [])
+        definition = next(
+            (
+                s
+                for s in symbols
+                if s.name == section.name and s.storage == 3 and s.aux_count == 1 and s.value == 0
+            ),
+            None,
+        )
+        if definition is None:
+            raise ValueError(f"COMDAT section without a section definition: {section.name}")
+        aux = definition.offset + 18
+        number, selection = struct.unpack_from("<HB", data, aux + 12)
+        if selection == 5:
+            associative[index] = number
+            continue
+        key = next((s for s in symbols if s.index > definition.index), None)
+        if key is None or key.storage != 2:
+            separate.add(index)
+    # Associations can chain. Follow them until nothing changes.
+    changed = True
+    while changed:
+        changed = False
+        for index, leader in associative.items():
+            if leader in separate and index not in separate:
+                separate.add(index)
+                changed = True
+    for index in separate:
+        struct.pack_into(
+            "<I", data, 20 + (index - 1) * 40 + 36, obj.sections[index].flags & ~0x1000
+        )
+    return data
 
 
 def linker_sections(obj, image_path):
@@ -197,7 +272,6 @@ def main():
     parser.add_argument("--input", required=True, type=pathlib.Path)
     parser.add_argument("--output", required=True, type=pathlib.Path)
     parser.add_argument("--linker-script", required=True, type=pathlib.Path)
-    parser.add_argument("--objcopy", required=True)
     args = parser.parse_args()
     paths = [pathlib.Path(line) for line in args.inputs.read_text().splitlines() if line]
     outputs = {args.output.resolve(), args.linker_script.resolve()}
@@ -206,22 +280,19 @@ def main():
         raise ValueError("COFF output paths must be distinct from each other and from inputs")
     obj = CoffFile(args.input.read_bytes())
     data, private = repair(obj, provenance(paths))
+    data = localize(data, private)
     with tempfile.TemporaryDirectory(dir=args.output.parent) as temp:
         temp = pathlib.Path(temp)
-        fixed, names, output = temp / "fixed.o", temp / "private.txt", temp / "localized.o"
-        fixed.write_bytes(data)
-        names.write_text("\n".join(sorted(private)) + "\n", encoding="utf-8")
-        subprocess.run(
-            [args.objcopy, f"--localize-symbols={names}", str(fixed), str(output)], check=True
-        )
-        localized = CoffFile(output.read_bytes())
+        output = temp / "localized.o"
+        output.write_bytes(data)
+        localized = CoffFile(data)
         for symbol in localized.symbols.values():
             if symbol.storage == 105:
                 target, _ = weak_target(localized, symbol)
                 if target not in localized.symbols or localized.symbols[target].storage != 2:
-                    raise ValueError(f"objcopy damaged weak fallback: {symbol.name}")
+                    raise ValueError(f"Localization damaged weak fallback: {symbol.name}")
             if symbol.name in private and symbol.storage == 2:
-                raise ValueError(f"objcopy did not localize: {symbol.name}")
+                raise ValueError(f"Symbol was not localized: {symbol.name}")
         script = temp / "sections.ld"
         script.write_text(linker_sections(localized, args.output), encoding="utf-8")
         os.replace(script, args.linker_script)

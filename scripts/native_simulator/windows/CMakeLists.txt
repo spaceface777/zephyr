@@ -135,7 +135,7 @@ set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS "${inputs}")
 add_custom_command(OUTPUT "${localized}" "${localized_script}"
   COMMAND "${NSI_PYTHON}" "${NSI_COFF_HELPER}"
     --inputs "${inputs}" --input "${NSI_EMBEDDED}" --output "${localized}"
-    --linker-script "${localized_script}" --objcopy "${CMAKE_OBJCOPY}"
+    --linker-script "${localized_script}"
   DEPENDS "${NSI_EMBEDDED}" "${inputs}" ${coff_inputs}
     "${NSI_COFF_HELPER}"
     "${helper_dir}/../pylib/build_helpers/coff_parser.py"
