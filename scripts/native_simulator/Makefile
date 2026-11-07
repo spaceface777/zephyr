@@ -299,23 +299,27 @@ ifeq (${HOST_OS},Darwin)
 # Apple's linker has no --localize-hidden: rename the constructor section so dyld
 # does not run the embedded SW constructors, then keep only the native simulator
 # interface symbols global.
+# The rename takes a second relocatable link, so it is only done when there are
+# constructors: Apple's linkers up to Xcode 26 give the source file entries of
+# the debug map they pass on in such a link a section number, and the final link
+# then drops the embedded SW's debug map, and with it its source lines.
 	@set -e; \
+	input=$<; \
 	init_section="${NSI_EMBSW_CTOR_SECTION}"; \
-	if [ -n "$${init_section}" ] && [ -n "${NSI_EMBSW_CTOR_ID_EXPR}" ]; then \
-	  image_id=$$(${NSI_NM} -j $< | sed -n '${NSI_EMBSW_CTOR_ID_EXPR}'); \
-	  if [ -n "$${image_id}" ]; then \
-	    init_section="$${init_section}_$${image_id}"; \
+	if [ -n "$${init_section}" ] && otool -l $< | grep -q 'sectname __mod_init_func$$'; then \
+	  if [ -n "${NSI_EMBSW_CTOR_ID_EXPR}" ]; then \
+	    image_id=$$(${NSI_NM} -j $< | sed -n '${NSI_EMBSW_CTOR_ID_EXPR}'); \
+	    if [ -n "$${image_id}" ]; then \
+	      init_section="$${init_section}_$${image_id}"; \
+	    fi; \
 	  fi; \
+	  input=$@.section; \
+	  ld ${NSI_DARWIN_LD_FLAGS} -r -rename_section __DATA __mod_init_func __DATA "$${init_section}" -o $${input} $<; \
 	fi; \
-	if [ -n "$${init_section}" ]; then \
-	  ld ${NSI_DARWIN_LD_FLAGS} -r -rename_section __DATA __mod_init_func __DATA "$${init_section}" -o $@.section $<; \
-	else \
-	  ld ${NSI_DARWIN_LD_FLAGS} -r -o $@.section $<; \
-	fi; \
-	${NSI_NM} -m $@.section | awk \
+	${NSI_NM} -m $${input} | awk \
 	  '$$2 == "(__TEXT,nsiif)" || $$2 == "(__DATA,nsiifdat)" || \
 	   $$2 == "(__TEXT,nsiiftxt)" { print $$NF }' > $@.symbols; \
-	${NSI_NMEDIT} -s $@.symbols -o $@ $@.section; \
+	${NSI_NMEDIT} -s $@.symbols -o $@ $${input}; \
 	rm -f $@.section $@.symbols
 else ifeq (${HOST_OS},Windows)
 	${NSI_PYTHON} ${NSI_COFF_HELPER} --inputs $<.coff-inputs --input $< --output $@ \
