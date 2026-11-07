@@ -1,5 +1,10 @@
 # SPDX-License-Identifier: Apache-2.0
 
+if(CMAKE_HOST_WIN32 AND "${ARCH}" STREQUAL "posix" AND NOT CONFIG_LLVM_USE_LLD)
+  message(FATAL_ERROR "Windows native_sim builds with Clang link with LLD. "
+                      "Select CONFIG_LLVM_USE_LLD=y.")
+endif()
+
 if(CONFIG_LLVM_USE_LD)
   set(LINKER ld)
 elseif(CONFIG_LLVM_USE_LLD)
@@ -45,6 +50,10 @@ elseif("${ARCH}" STREQUAL "hexagon")
   set(triple hexagon-none-elf)
 elseif("${ARCH}" STREQUAL "tricore")
   set(triple tricore-unknown-elf)
+elseif("${ARCH}" STREQUAL "posix" AND CMAKE_HOST_WIN32)
+  # Windows native_sim images are 32-bit x86 MinGW code, also on Arm64 and x64 hosts,
+  # whose clang targets the host architecture by default.
+  set(triple i686-w64-windows-gnu)
 endif()
 
 if(DEFINED triple)

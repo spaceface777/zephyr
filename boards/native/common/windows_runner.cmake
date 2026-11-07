@@ -30,10 +30,14 @@ function(nsi_runner_export name value)
   set(nsi_runner_content "${nsi_runner_content}" PARENT_SCOPE)
 endfunction()
 
-foreach(tool C_COMPILER C_COMPILER_LAUNCHER CXX_COMPILER CXX_COMPILER_LAUNCHER AR RANLIB OBJCOPY
-    MAKE_PROGRAM)
+foreach(tool C_COMPILER C_COMPILER_LAUNCHER C_COMPILER_TARGET CXX_COMPILER CXX_COMPILER_LAUNCHER
+    AR RANLIB OBJCOPY MAKE_PROGRAM)
   nsi_runner_export(CMAKE_${tool} "${CMAKE_${tool}}")
 endforeach()
+# GNU ld links the localized relocatable image with linker scripts. LLD takes the
+# inputs scripts/build/coff_layout.py laid out for the kernel image instead.
+nsi_runner_export(NSI_LINKER "${LINKER}")
+nsi_runner_export(NSI_COFF_LAYOUT "${ZEPHYR_BASE}/scripts/build/coff_layout.py")
 nsi_runner_export(NSI_DIR "${NSI_DIR}")
 nsi_runner_export(NSI_PYTHON "${PYTHON_EXECUTABLE}")
 nsi_runner_export(NSI_COFF_HELPER "${ZEPHYR_BASE}/scripts/build/localize_coff.py")
@@ -127,10 +131,8 @@ add_custom_target(native_runner_link_inputs
   DEPENDS runner_lib ${logical_target_for_zephyr_elf} ${nsi_runner_dependencies}
     $<TARGET_GENEX_EVAL:native_simulator,${nsi_runner_library_files}>
   BYPRODUCTS
-    "${nsi_runner_build}/embedded.loc_cpusw.o"
-    "${nsi_runner_build}/embedded.loc_cpusw.o.ld"
+    "${nsi_runner_build}/link_inputs.rsp"
     "${nsi_runner_build}/linker_script.ld"
-    "${nsi_runner_build}/windows_linker_script.ld"
   VERBATIM
   USES_TERMINAL
 )

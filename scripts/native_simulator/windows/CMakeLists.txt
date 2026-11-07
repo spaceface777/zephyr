@@ -17,9 +17,17 @@ foreach(language C CXX ASM)
     set(CMAKE_${language}_FLAGS_${configuration} "" CACHE STRING "Runner ${language} flags" FORCE)
   endforeach()
 endforeach()
+# Clang targets the host architecture unless told otherwise.
+foreach(language C CXX ASM)
+  set(CMAKE_${language}_COMPILER_TARGET "${CMAKE_C_COMPILER_TARGET}")
+endforeach()
 project(native_sim_windows_runner LANGUAGES C)
-if(NOT CMAKE_HOST_WIN32 OR NOT CMAKE_C_COMPILER_ID STREQUAL "GNU")
-  message(FATAL_ERROR "The Windows runner requires native Windows and MinGW GCC.")
+if(NOT CMAKE_HOST_WIN32 OR NOT CMAKE_C_COMPILER_ID MATCHES "^(GNU|Clang)$")
+  message(FATAL_ERROR "The Windows runner requires native Windows and MinGW GCC or Clang.")
+endif()
+set(target_flags)
+if(CMAKE_C_COMPILER_TARGET)
+  set(target_flags "--target=${CMAKE_C_COMPILER_TARGET}")
 endif()
 
 file(GLOB runner_sources CONFIGURE_DEPENDS
@@ -116,53 +124,86 @@ target_compile_options(runner PRIVATE
 )
 add_custom_target(runner_lib DEPENDS runner)
 
-# A first runner-only build can precede the embedded image. Once its sidecar
-# exists, retain the final graph across configurations so Ninja keeps depfile state.
-# The final build requires the sidecar and must not skip missing inputs.
-if(NOT NSI_LINK_INPUTS_READY AND NOT EXISTS "${NSI_EMBEDDED}.coff-inputs")
-  return()
-endif()
-
-set(localized "${CMAKE_CURRENT_BINARY_DIR}/embedded.loc_cpusw.o")
-set(localized_script "${localized}.ld")
 set(base_script "${CMAKE_CURRENT_BINARY_DIR}/linker_script.ld")
-set(final_script "${CMAKE_CURRENT_BINARY_DIR}/windows_linker_script.ld")
-set(inputs "${NSI_EMBEDDED}.coff-inputs")
-# Keep the actual original object/archive inputs in the localization dependency graph.
-get_filename_component(helper_dir "${NSI_COFF_HELPER}" DIRECTORY)
-file(STRINGS "${inputs}" coff_inputs)
-set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS "${inputs}")
-add_custom_command(OUTPUT "${localized}" "${localized_script}"
-  COMMAND "${NSI_PYTHON}" "${NSI_COFF_HELPER}"
-    --inputs "${inputs}" --input "${NSI_EMBEDDED}" --output "${localized}"
-    --linker-script "${localized_script}" --objcopy "${CMAKE_OBJCOPY}"
-  DEPENDS "${NSI_EMBEDDED}" "${inputs}" ${coff_inputs}
-    "${NSI_COFF_HELPER}"
-    "${helper_dir}/../pylib/build_helpers/coff_parser.py"
-  VERBATIM
-)
+set(link_inputs "${CMAKE_CURRENT_BINARY_DIR}/link_inputs.rsp")
 add_custom_command(OUTPUT "${base_script}"
-  COMMAND "${CMAKE_C_COMPILER}" -x c -E -P
+  COMMAND "${CMAKE_C_COMPILER}" ${target_flags} -x c -E -P
     "${NSI_DIR}/common/other/linker_script.pre.ld" -o "${base_script}"
     -MMD -MP -MF "${base_script}.d" -MT "${base_script}"
   DEPENDS "${NSI_DIR}/common/other/linker_script.pre.ld"
   DEPFILE "${base_script}.d"
   VERBATIM
 )
-add_custom_command(OUTPUT "${final_script}"
-  COMMAND "${CMAKE_COMMAND}" "-DNSI_BASE=${base_script}"
-    "-DNSI_LOCALIZED=${localized_script}" "-DNSI_OUTPUT=${final_script}"
-    -P "${CMAKE_CURRENT_LIST_DIR}/linker_script.cmake"
-  DEPENDS "${base_script}" "${localized_script}"
-    "${CMAKE_CURRENT_LIST_DIR}/linker_script.cmake"
-  VERBATIM
-)
+
+# The final link reads its inputs, the embedded image and the runner, from
+# link_inputs.rsp: an image built by the embedding host links the same inputs.
+# A first runner-only build can precede the embedded image. Once its sidecar
+# exists, retain the final graph across configurations so Ninja keeps depfile state.
+# The final build requires the sidecar and must not skip missing inputs.
+if(NSI_LINKER STREQUAL "lld")
+  set(layout "${NSI_EMBEDDED}.coff-layout.json")
+  if(NOT NSI_LINK_INPUTS_READY AND NOT EXISTS "${layout}")
+    return()
+  endif()
+  get_filename_component(helper_dir "${NSI_COFF_LAYOUT}" DIRECTORY)
+  set(runner_inputs --runner "$<TARGET_FILE:runner>")
+  foreach(library IN LISTS NSI_LIBRARIES)
+    list(APPEND runner_inputs --runner "${library}")
+  endforeach()
+  add_custom_command(OUTPUT "${link_inputs}"
+    COMMAND "${NSI_PYTHON}" "${NSI_COFF_LAYOUT}" finalize
+      --manifest "${layout}" --stage "${CMAKE_CURRENT_BINARY_DIR}/layout"
+      --script "${base_script}" ${runner_inputs} --rsp "${link_inputs}"
+    DEPENDS "${layout}" "${NSI_EMBEDDED}" runner ${NSI_LIBRARIES} "${base_script}"
+      "${NSI_COFF_LAYOUT}"
+      "${helper_dir}/../pylib/build_helpers/coff_edit.py"
+      "${helper_dir}/../pylib/build_helpers/ld_script.py"
+    COMMAND_EXPAND_LISTS
+    VERBATIM
+  )
+else()
+  if(NOT NSI_LINK_INPUTS_READY AND NOT EXISTS "${NSI_EMBEDDED}.coff-inputs")
+    return()
+  endif()
+  set(localized "${CMAKE_CURRENT_BINARY_DIR}/embedded.loc_cpusw.o")
+  set(localized_script "${localized}.ld")
+  set(final_script "${CMAKE_CURRENT_BINARY_DIR}/windows_linker_script.ld")
+  set(inputs "${NSI_EMBEDDED}.coff-inputs")
+  # Keep the actual original object/archive inputs in the localization dependency graph.
+  get_filename_component(helper_dir "${NSI_COFF_HELPER}" DIRECTORY)
+  file(STRINGS "${inputs}" coff_inputs)
+  set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS "${inputs}")
+  add_custom_command(OUTPUT "${localized}" "${localized_script}"
+    COMMAND "${NSI_PYTHON}" "${NSI_COFF_HELPER}"
+      --inputs "${inputs}" --input "${NSI_EMBEDDED}" --output "${localized}"
+      --linker-script "${localized_script}" --objcopy "${CMAKE_OBJCOPY}"
+    DEPENDS "${NSI_EMBEDDED}" "${inputs}" ${coff_inputs}
+      "${NSI_COFF_HELPER}"
+      "${helper_dir}/../pylib/build_helpers/coff_parser.py"
+    VERBATIM
+  )
+  add_custom_command(OUTPUT "${final_script}"
+    COMMAND "${CMAKE_COMMAND}" "-DNSI_BASE=${base_script}"
+      "-DNSI_LOCALIZED=${localized_script}" "-DNSI_OUTPUT=${final_script}"
+      -P "${CMAKE_CURRENT_LIST_DIR}/linker_script.cmake"
+    DEPENDS "${base_script}" "${localized_script}"
+      "${CMAKE_CURRENT_LIST_DIR}/linker_script.cmake"
+    VERBATIM
+  )
+  string(JOIN "\n" libraries ${NSI_LIBRARIES})
+  file(GENERATE OUTPUT "${link_inputs}.in" CONTENT
+    "-Wl,--whole-archive\n${localized}\n$<TARGET_FILE:runner>\n${libraries}\n-Wl,--no-whole-archive\n-T\n${final_script}\n"
+  )
+  # Copying gives the response file a new time stamp whenever one of its inputs changes.
+  add_custom_command(OUTPUT "${link_inputs}"
+    COMMAND "${CMAKE_COMMAND}" -E copy "${link_inputs}.in" "${link_inputs}"
+    DEPENDS "${link_inputs}.in" "${localized}" "${final_script}" runner ${NSI_LIBRARIES}
+    VERBATIM
+  )
+endif()
 
 # Custom image links need these inputs even when the runner does not link an executable.
-add_custom_target(link_inputs DEPENDS
-  "${localized}"
-  "${final_script}"
-)
+add_custom_target(link_inputs DEPENDS "${link_inputs}")
 if(NOT NSI_BUILD_EXE)
   return()
 endif()
@@ -176,12 +217,10 @@ foreach(option IN LISTS NSI_INTERFACE_LINK_OPTIONS)
   list(APPEND link_options ${option})
 endforeach()
 add_custom_command(OUTPUT "${NSI_EXE}"
-  COMMAND "${CMAKE_C_COMPILER}"
-    -Wl,--whole-archive "${localized}" "$<TARGET_FILE:runner>" ${NSI_LIBRARIES}
-    -Wl,--no-whole-archive ${runner_libraries} -o "${NSI_EXE}"
-    -fno-pie -fno-pic -Wall -Wpedantic -Wl,--gc-sections -pthread
-    ${link_options} -lm -T "${final_script}"
-  DEPENDS runner "${localized}" ${NSI_LIBRARIES} ${runner_libraries} "${final_script}"
+  COMMAND "${CMAKE_C_COMPILER}" ${target_flags} "@${link_inputs}" ${runner_libraries}
+    -o "${NSI_EXE}" -fno-pie -fno-pic -Wall -Wpedantic -Wl,--gc-sections -pthread
+    ${link_options} -lm
+  DEPENDS "${link_inputs}" ${runner_libraries}
   COMMAND_EXPAND_LISTS
   VERBATIM
 )

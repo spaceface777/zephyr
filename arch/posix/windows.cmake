@@ -1,7 +1,8 @@
 # SPDX-FileCopyrightText: Copyright The Zephyr Project Contributors
 # SPDX-License-Identifier: Apache-2.0
 
-# Native Windows only, with the selected i686 MinGW compiler and host C runtime.
+# Native Windows only, with an i686 MinGW compiler and the host C runtime: GCC with
+# GNU ld (the host toolchain), or Clang with LLD (the host/llvm toolchain).
 if(NOT NATIVE_SIM_EXPERIMENTAL_WINDOWS)
   message(FATAL_ERROR "Windows native_sim requires NATIVE_SIM_EXPERIMENTAL_WINDOWS=ON.")
 endif()
@@ -9,22 +10,30 @@ if(NOT CONFIG_BOARD_NATIVE_SIM OR CONFIG_64BIT)
   message(FATAL_ERROR "Experimental Windows support requires native_sim/native (32 bit).")
 endif()
 if(NOT ZEPHYR_TOOLCHAIN_VARIANT STREQUAL "host" OR
-   NOT CMAKE_C_COMPILER_ID STREQUAL "GNU")
-  message(FATAL_ERROR "Windows native_sim requires the host toolchain with i686 MinGW GCC.")
+   NOT ((CMAKE_C_COMPILER_ID STREQUAL "GNU" AND LINKER STREQUAL "ld") OR
+        (CMAKE_C_COMPILER_ID STREQUAL "Clang" AND LINKER STREQUAL "lld")))
+  message(FATAL_ERROR "Windows native_sim requires the host toolchain with i686 MinGW GCC "
+                      "and GNU ld, or the host/llvm toolchain with Clang and LLD.")
 endif()
 
+set(windows_target_flags)
+if(CMAKE_C_COMPILER_TARGET)
+  set(windows_target_flags "--target=${CMAKE_C_COMPILER_TARGET}")
+endif()
 execute_process(
-  COMMAND "${CMAKE_C_COMPILER}" -dumpmachine
+  COMMAND "${CMAKE_C_COMPILER}" ${windows_target_flags} -dumpmachine
   OUTPUT_VARIABLE windows_triplet
   OUTPUT_STRIP_TRAILING_WHITESPACE
   COMMAND_ERROR_IS_FATAL ANY
 )
 execute_process(
-  COMMAND "${CMAKE_C_COMPILER}" -dM -E -x c "${ZEPHYR_BASE}/misc/empty_file.c"
+  COMMAND "${CMAKE_C_COMPILER}" ${windows_target_flags} -dM -E -x c
+    "${ZEPHYR_BASE}/misc/empty_file.c"
   OUTPUT_VARIABLE windows_macros
   COMMAND_ERROR_IS_FATAL ANY
 )
-if(NOT windows_triplet STREQUAL "i686-w64-mingw32" OR
+# Clang prints the normalized spelling of the same target.
+if(NOT windows_triplet MATCHES "^i686-w64-(mingw32|windows-gnu)$" OR
    NOT windows_macros MATCHES "#define _WIN32 1" OR
    windows_macros MATCHES "#define _WIN64" OR
    NOT windows_macros MATCHES "#define __SIZEOF_POINTER__ 4" OR

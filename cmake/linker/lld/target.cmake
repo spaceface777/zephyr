@@ -15,6 +15,10 @@ string(REPLACE ";" " " CMAKE_REQUIRED_FLAGS "${CMAKE_REQUIRED_FLAGS}")
 macro(configure_linker_script linker_script_gen linker_pass_define)
   set(extra_dependencies ${ARGN})
   set(template_script_defines ${linker_pass_define})
+  if(CMAKE_HOST_WIN32 AND CONFIG_ARCH_POSIX)
+    # -undef removes the target macro needed for COFF C-symbol decoration.
+    list(APPEND template_script_defines _WIN32)
+  endif()
   list(TRANSFORM template_script_defines PREPEND "-D")
 
   # Different generators deal with depfiles differently.
@@ -139,3 +143,7 @@ endfunction()
 # Load toolchain_ld-family macros
 include(${ZEPHYR_BASE}/cmake/linker/ld/target_relocation.cmake)
 include(${ZEPHYR_BASE}/cmake/linker/ld/target_configure.cmake)
+
+if(CMAKE_HOST_WIN32 AND CONFIG_ARCH_POSIX)
+  include(${ZEPHYR_BASE}/cmake/linker/lld/target_coff.cmake)
+endif()

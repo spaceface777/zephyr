@@ -88,25 +88,43 @@ Build dependencies:
 
 * The normal :ref:`getting_started` prerequisites for native Windows, including
   Python, CMake, Ninja, west, and the Zephyr Python dependencies.
-* An i686 MinGW toolchain.
+* An i686 MinGW toolchain, one of:
 
-  * Tested: the standard `WinLibs <https://winlibs.com/>`_ Win32/i686 toolchain with POSIX threads,
+  * GCC with GNU binutils, built with the ``host`` toolchain variant.
+    Tested: the standard `WinLibs <https://winlibs.com/>`_ Win32/i686 toolchain with POSIX threads,
     DWARF exceptions, and UCRT: GCC 16.2.0, MinGW-w64 14.0.0, release 2.
+  * Clang with LLD, built with the ``host/llvm`` toolchain variant.
+    Tested: the UCRT release of `LLVM-MinGW <https://github.com/mstorsjo/llvm-mingw>`_ 20261104
+    (LLVM 23.1.5), hosted on x86_64 and on ARM64 Windows. Its native ARM64 compiler avoids the
+    x86 emulation of the whole compiler on Windows on Arm. Select
+    :kconfig:option:`CONFIG_LLVM_USE_LLD` and :kconfig:option:`CONFIG_COMPILER_RT_RTLIB`:
+    LLVM-MinGW has no GNU ld and no libgcc.
 
 The runner uses CMake, Ninja, and Python. It does not require MSYS2, Cygwin,
 Git Bash, or GNU make. The Zephyr SDK ELF compiler cannot replace the Windows toolchain.
 
 Use paths without whitespace for the workspace, toolchain, and build directory.
-Put the native tools and the WinLibs ``bin`` directory in ``PATH``.
-When you run the executable, keep the WinLibs ``bin`` directory in ``PATH`` for its runtime DLLs.
+Put the native tools and the toolchain's ``bin`` directory in ``PATH``.
+When you run the executable, its runtime DLLs must be in ``PATH``: the WinLibs ``bin`` directory,
+or the ``i686-w64-mingw32\bin`` directory of LLVM-MinGW.
 
-From a Windows command prompt in the Zephyr workspace, build Hello World:
+From a Windows command prompt in the Zephyr workspace, build Hello World with GCC:
 
 .. code-block:: bat
 
    west build -b native_sim/native zephyr/samples/hello_world -d C:/build/native_sim -- ^
      -GNinja -DZEPHYR_TOOLCHAIN_VARIANT=host ^
      -DNATIVE_SIM_EXPERIMENTAL_WINDOWS=ON ^
+     -DCONFIG_NATIVE_SIM_SLOWDOWN_TO_REAL_TIME=n
+
+Or with LLVM-MinGW:
+
+.. code-block:: bat
+
+   west build -b native_sim/native zephyr/samples/hello_world -d C:/build/native_sim -- ^
+     -GNinja -DZEPHYR_TOOLCHAIN_VARIANT=host/llvm ^
+     -DNATIVE_SIM_EXPERIMENTAL_WINDOWS=ON ^
+     -DCONFIG_LLVM_USE_LLD=y -DCONFIG_COMPILER_RT_RTLIB=y ^
      -DCONFIG_NATIVE_SIM_SLOWDOWN_TO_REAL_TIME=n
 
 For a custom runner integration, configure with ``-DCONFIG_BUILD_OUTPUT_EXE=n``.
@@ -120,7 +138,10 @@ The archive is ``C:/build/native_sim/zephyr/NSI/build/runner.a``.
 It contains only runner objects, not the embedded Zephyr image.
 The runner receives the ``native_simulator`` interface sources, include directories,
 and compile options in a separate CMake project.
-A custom final link must retain COFF localization, final garbage collection, and initialization checks.
+The ``native_runner_link_inputs`` target writes ``zephyr/NSI/build/link_inputs.rsp``.
+It names the localized embedded image, the runner and its libraries, laid out for the linker in use.
+A custom final link passes it to the compiler driver as ``@link_inputs.rsp`` and keeps final
+garbage collection and initialization checks.
 
 Run the executable with a simulation time limit:
 
@@ -128,10 +149,19 @@ Run the executable with a simulation time limit:
 
    C:\build\native_sim\zephyr\zephyr.exe -stop_at=1
 
-The COFF build retains the original weak-symbol metadata for localization.
+With GNU ld, the COFF build retains the original weak-symbol metadata for localization.
 Garbage collection runs at the final link, after the weak-symbol repair.
 The repair preserves weak overrides and keeps embedded definitions private.
 The build uses unmodified binutils.
+
+LLD's COFF linker supports neither linker scripts nor relocatable links.
+``scripts/build/coff_layout.py`` applies the generated linker script instead.
+It renames each input section that the script places to a grouped COFF section,
+``<output>$~<position>``, which LLD merges and orders by name, and it emits the symbols,
+data and alignment that the script defines into a small marker object.
+It makes the embedded definitions private by renaming them, with their references,
+except for the native simulator interface. Debug information keeps the original names.
+The build uses unmodified LLVM tools.
 
 The Windows stack adapter measures OS guard pages before it requests a committed thread stack.
 It checks each child stack independently before it publishes bounds or permits sentinel writes.
