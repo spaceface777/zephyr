@@ -361,6 +361,40 @@ void nsi_coro_ctx_free(struct nsi_coro_ctx *ctx)
 	}
 }
 
+void nsi_coro_ctx_release_all(void)
+{
+	void *running;
+
+	if (!owner_set || GetCurrentThreadId() != owner || IsThreadAFiber() == FALSE) {
+		return;
+	}
+	/* Deleting the running fiber would end the thread. */
+	running = GetCurrentFiber();
+	for (struct nsi_coro_ctx *ctx = children, *next; ctx != NULL; ctx = next) {
+		next = ctx->next;
+		if (ctx->fiber == NULL || ctx->fiber == running) {
+			continue;
+		}
+		deleting = true;
+		DeleteFiber(ctx->fiber);
+		deleting = false;
+		ctx->fiber = NULL;
+		ctx->terminal = true;
+		if (ctx->prev != NULL) {
+			ctx->prev->next = ctx->next;
+		} else {
+			children = ctx->next;
+		}
+		if (ctx->next != NULL) {
+			ctx->next->prev = ctx->prev;
+		}
+		ctx->prev = NULL;
+		ctx->next = NULL;
+	}
+	deferred_ctx = NULL;
+	deferred_allocation = NULL;
+}
+
 static void after_switch(void)
 {
 	check_owner();

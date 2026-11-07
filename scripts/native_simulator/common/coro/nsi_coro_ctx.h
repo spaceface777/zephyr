@@ -53,6 +53,9 @@ struct nsi_coro_ctx {
 #endif
 	void (*entry)(void *arg);
 	void *arg;
+	/* Every context with a stack, so that all of them can be released at once. */
+	struct nsi_coro_ctx *next;
+	struct nsi_coro_ctx *prev;
 #ifdef NSI_CORO_ASAN
 	void *asan_fake_stack;
 	const void *asan_bottom;
@@ -68,5 +71,11 @@ void nsi_coro_ctx_stack(struct nsi_coro_ctx *ctx, void **addr, unsigned long *si
 void nsi_coro_ctx_switch(struct nsi_coro_ctx *to, bool final);
 struct nsi_coro_ctx *nsi_coro_ctx_current(void);
 void nsi_coro_ctx_defer_free(struct nsi_coro_ctx *ctx, void *allocation);
+/*
+ * Free the stack of every context without switching to any of them, for a domain that will
+ * never run again. The caller must not run on one of these stacks: that one is kept.
+ * The structures that embed the contexts stay allocated.
+ */
+void nsi_coro_ctx_release_all(void);
 
 #endif /* NSI_COMMON_CORO_NSI_CORO_CTX_H */

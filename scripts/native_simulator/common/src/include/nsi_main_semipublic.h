@@ -32,6 +32,14 @@ extern "C" {
 void nsi_init(int argc, char *argv[]);
 void nsi_exec_for(uint64_t us);
 
+/*
+ * Free the stacks of the embedded CPUs and threads of a simulation that will never run again,
+ * without running any embedded or hardware model code: for an embedding application which
+ * abandons the simulation, for example after a fault inside it. The caller must not run on one
+ * of those stacks. Host thread (pthread) backends free nothing.
+ */
+void nsi_abandon(void);
+
 #ifdef __cplusplus
 }
 #endif

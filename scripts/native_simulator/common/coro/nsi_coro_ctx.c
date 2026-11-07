@@ -6,6 +6,7 @@
 
 #include <errno.h>
 #include <pthread.h>
+#include <stdint.h>
 #include <stdlib.h>
 #include <string.h>
 #ifdef _WIN32
@@ -88,9 +89,36 @@ void nsi_coro_ctx_reset(void)
 	owner_set = false;
 }
 
+static struct nsi_coro_ctx *contexts;
+
+static void link_context(struct nsi_coro_ctx *ctx)
+{
+	ctx->prev = NULL;
+	ctx->next = contexts;
+	if (contexts != NULL) {
+		contexts->prev = ctx;
+	}
+	contexts = ctx;
+}
+
+static void unlink_context(struct nsi_coro_ctx *ctx)
+{
+	if (ctx->prev != NULL) {
+		ctx->prev->next = ctx->next;
+	} else {
+		contexts = ctx->next;
+	}
+	if (ctx->next != NULL) {
+		ctx->next->prev = ctx->prev;
+	}
+	ctx->next = NULL;
+	ctx->prev = NULL;
+}
+
 void nsi_coro_ctx_free(struct nsi_coro_ctx *ctx)
 {
 	if (ctx->map != NULL) {
+		unlink_context(ctx);
 #ifdef _WIN32
 		if (VirtualFree(ctx->map, 0, MEM_RELEASE) == 0) {
 			nsi_print_error_and_exit("%s: cannot release coroutine stack\n", __func__);
@@ -100,6 +128,25 @@ void nsi_coro_ctx_free(struct nsi_coro_ctx *ctx)
 #endif
 		ctx->map = NULL;
 	}
+}
+
+void nsi_coro_ctx_release_all(void)
+{
+	uintptr_t here = (uintptr_t)__builtin_frame_address(0);
+	struct nsi_coro_ctx *ctx = contexts;
+
+	while (ctx != NULL) {
+		struct nsi_coro_ctx *next = ctx->next;
+		uintptr_t map = (uintptr_t)ctx->map;
+
+		if ((here < map) || (here - map >= ctx->map_size)) {
+			nsi_coro_ctx_free(ctx);
+		}
+		ctx = next;
+	}
+	/* A pending release was one of the contexts above. */
+	deferred_ctx = NULL;
+	deferred_allocation = NULL;
 }
 
 static void after_switch(nsi_coro_t from)
@@ -197,6 +244,7 @@ void nsi_coro_ctx_create(struct nsi_coro_ctx *ctx, void (*entry)(void *), void *
 
 	ctx->continuation = nsi_coro_create((char *)ctx->map + page + NSI_CORO_STACK_SIZE,
 					    trampoline);
+	link_context(ctx);
 	ctx->err = 0;
 	if (fpenv_save(&ctx->fenv) != 0) {
 		nsi_print_error_and_exit("%s: cannot read floating point environment\n",

@@ -22,7 +22,8 @@
 #include "nsi_config.h"
 #include "nsi_cpu_ctrl.h"
 #include "nsi_tracing.h"
-#if defined(NSI_CORO_FIBERS) && defined(NSI_NCE_BACKEND_COROUTINES)
+#include "nsi_main_semipublic.h"
+#ifndef NSI_NCT_BACKEND_PTHREADS
 #include "nsi_coro_ctx.h"
 #endif
 
@@ -52,6 +53,13 @@ int nsi_exit_inner(int exit_code)
 	nsi_fiber_domain_exit_end();
 #endif
 	return max_exit_code;
+}
+
+void nsi_abandon(void)
+{
+#ifndef NSI_NCT_BACKEND_PTHREADS
+	nsi_coro_ctx_release_all();
+#endif
 }
 
 NSI_FUNC_NORETURN void nsi_exit(int exit_code)
