@@ -290,10 +290,16 @@ class Layout:
             nonlocal run, run_key, offset, first
             if not run:
                 return
-            data = bytearray()
+            # A run starts with its alignment: the main loop starts a new run at an ALIGN
+            # that follows labels or data, so that the linker aligns that marker section.
             align = start_alignment if first else 1
-            if first:
-                offset = 0
+            while run and isinstance(run[0], ld.Dot):
+                if run[0].expr.kind != "align":
+                    raise LayoutError(f"unsupported location counter change in {output.name}")
+                align = max(align, ld.constant(run[0].expr.value))
+                run.pop(0)
+            offset += -offset % align
+            data = bytearray()
             local: dict[str, int] = {}
             for item in run:
                 if isinstance(item, ld.Assign):
@@ -306,32 +312,14 @@ class Layout:
                         labels[item.name] = labels[item.expr.value]
                     else:
                         raise LayoutError(f"unsupported assignment to {item.name} in {output.name}")
-                elif isinstance(item, ld.Dot):
-                    if item.expr.kind != "align":
-                        raise LayoutError(f"unsupported location counter change in {output.name}")
-                    value = ld.constant(item.expr.value)
-                    if not data and not local:
-                        align = max(align, value)
-                    else:
-                        data.extend(bytes(-(offset + len(data)) % value))
                 elif isinstance(item, ld.Data):
                     data.extend(ld.constant(item.expr).to_bytes(item.size, "little"))
-            offset += -offset % align
             name = f"{GROUP_PREFIX[group]}{run_key}"
             if group == "bss" and any(data):
                 raise LayoutError(f"data statement in uninitialized section {output.name}")
             payload = None if group == "bss" else bytes(data)
-            self.marker_sections.append(
-                ce.Section(
-                    name,
-                    ce.with_alignment(GROUP_FLAGS[group], align),
-                    len(data),
-                    payload,
-                    b"",
-                    b"",
-                    0,
-                )
-            )
+            flags = ce.with_alignment(GROUP_FLAGS[group], align)
+            self.marker_sections.append(ce.Section(name, flags, len(data), payload, b"", b"", 0))
             number = len(self.marker_sections)
             for symbol, position in local.items():
                 self.marker_symbols.append(
@@ -356,6 +344,8 @@ class Layout:
                 self.sizes[output.name] = offset
                 self.check(item)
                 continue
+            if isinstance(item, ld.Dot) and any(not isinstance(other, ld.Dot) for other in run):
+                flush()
             if run_key is None:
                 run_key = item_key
             run.append(item)

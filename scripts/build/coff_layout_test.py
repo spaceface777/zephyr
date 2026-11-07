@@ -161,3 +161,12 @@ def test_link_command_parsing():
     assert link["undefined"] == ["_Abs"] and link["map"] == "out.map"
     assert link["driver"] == ["--target=i686-w64-windows-gnu", "-Oz"]
     assert cl.split_windows(r'a "b c" dir\file.obj "q\"x"') == ["a", "b c", r"dir\file.obj", 'q"x']
+
+
+def test_alignment_after_a_label_starts_an_aligned_marker():
+    script = "SECTIONS { s : { __a = .; LONG(1) . = ALIGN(16); __b = .; *(.x) } }"
+    layout = cl.Layout([script], "e")
+    layout.apply([unit([section(".x", DATA, 4, 4)])])
+    markers = ce.CoffObject(layout.markers())
+    assert [ce.alignment(s.flags) for s in markers.sections] == [4, 16]
+    assert layout.labels["__a"] == ("s", 0) and layout.labels["__b"] == ("s", 16)
