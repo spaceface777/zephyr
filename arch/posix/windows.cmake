@@ -1,7 +1,8 @@
 # SPDX-FileCopyrightText: Copyright The Zephyr Project Contributors
 # SPDX-License-Identifier: Apache-2.0
 
-# Native Windows only, with the selected i686 MinGW compiler and host C runtime.
+# Native Windows only, with an i686 MinGW compiler and the host C runtime: GCC (the host
+# toolchain) or Clang (the host/llvm toolchain), both with GNU ld.
 if(NOT NATIVE_SIM_EXPERIMENTAL_WINDOWS)
   message(FATAL_ERROR "Windows native_sim requires NATIVE_SIM_EXPERIMENTAL_WINDOWS=ON.")
 endif()
@@ -9,22 +10,35 @@ if(NOT CONFIG_BOARD_NATIVE_SIM OR CONFIG_64BIT)
   message(FATAL_ERROR "Experimental Windows support requires native_sim/native (32 bit).")
 endif()
 if(NOT ZEPHYR_TOOLCHAIN_VARIANT STREQUAL "host" OR
-   NOT CMAKE_C_COMPILER_ID STREQUAL "GNU")
-  message(FATAL_ERROR "Windows native_sim requires the host toolchain with i686 MinGW GCC.")
+   NOT CMAKE_C_COMPILER_ID MATCHES "^(GNU|Clang)$" OR NOT LINKER STREQUAL "ld")
+  message(FATAL_ERROR "Windows native_sim requires the host toolchain with i686 MinGW GCC, "
+                      "or the host/llvm toolchain with Clang, and GNU ld.")
 endif()
 
+# Clang links with GNU ld only through -fuse-ld=bfd, which needs ld.bfd.
+if(CMAKE_C_COMPILER_ID STREQUAL "Clang" AND NOT GNULD_LINKER_IS_BFD)
+  message(FATAL_ERROR "Windows native_sim with Clang requires GNU ld as "
+                      "i686-w64-mingw32-ld.bfd, next to Clang or on PATH. Found: ${GNULD_LINKER}")
+endif()
+
+set(windows_target_flags)
+if(CMAKE_C_COMPILER_TARGET)
+  set(windows_target_flags "--target=${CMAKE_C_COMPILER_TARGET}")
+endif()
 execute_process(
-  COMMAND "${CMAKE_C_COMPILER}" -dumpmachine
+  COMMAND "${CMAKE_C_COMPILER}" ${windows_target_flags} -dumpmachine
   OUTPUT_VARIABLE windows_triplet
   OUTPUT_STRIP_TRAILING_WHITESPACE
   COMMAND_ERROR_IS_FATAL ANY
 )
 execute_process(
-  COMMAND "${CMAKE_C_COMPILER}" -dM -E -x c "${ZEPHYR_BASE}/misc/empty_file.c"
+  COMMAND "${CMAKE_C_COMPILER}" ${windows_target_flags} -dM -E -x c
+    "${ZEPHYR_BASE}/misc/empty_file.c"
   OUTPUT_VARIABLE windows_macros
   COMMAND_ERROR_IS_FATAL ANY
 )
-if(NOT windows_triplet STREQUAL "i686-w64-mingw32" OR
+# Clang prints the normalized spelling of the same target.
+if(NOT windows_triplet MATCHES "^i686-w64-(mingw32|windows-gnu)$" OR
    NOT windows_macros MATCHES "#define _WIN32 1" OR
    windows_macros MATCHES "#define _WIN64" OR
    NOT windows_macros MATCHES "#define __SIZEOF_POINTER__ 4" OR
@@ -86,6 +100,17 @@ set_property(TARGET linker PROPERTY base "${windows_link_base}")
 # Inspect COFF headers through the existing post-link statistics recipe.
 set_property(TARGET bintools PROPERTY readelf_command ${CMAKE_OBJDUMP})
 set_property(TARGET bintools PROPERTY readelf_flag_headers -x)
+
+# Clang writes an address-significance table for LLD in every object, marked for
+# removal. GNU ld does not use it, and its relocatable link drops that mark, so the
+# final link would place the table at address 0 of the image.
+if(CMAKE_C_COMPILER_ID STREQUAL "Clang")
+  zephyr_compile_options(-fno-addrsig)
+endif()
+
+# GCC leaves the start files and default libraries out of a relocatable link, but
+# Clang's MinGW driver adds them. The runner links them into the final image.
+set_property(TARGET linker PROPERTY partial_linking -r -nostdlib)
 
 # PE has no ELF hidden visibility or PIE mode. Embedded code remains relocatable.
 set_property(TARGET linker PROPERTY no_position_independent "")

@@ -47,6 +47,22 @@ SECTIONS
 		KEEP(*(SORT(.nsi_hw_event_[1-9][0-9][0-9])));
 		NSI_SYMBOL(__nsi_hw_events_end) = .;
 	}
+
+#if defined(_WIN32)
+	/*
+	 * LLVM's libunwind finds the DWARF unwind tables of a module by the section
+	 * name ".eh_frame" cut to the 8 characters of a PE section header. GNU ld
+	 * writes the full name to the string table instead, if the image has any
+	 * long section names, such as those of its debug information. This rule
+	 * takes all unwind tables before the default ".eh_frame" rule does, with the
+	 * same input order, as LLD names them. The libgcc unwinder registers its
+	 * tables by address, so the name does not matter to GCC.
+	 */
+	.eh_fram NSI_SECTION_ALIGN :
+	{
+		KEEP(*(.eh_frame*))
+	}
+#endif
  } INSERT AFTER .data;
 
 /*

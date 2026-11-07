@@ -45,6 +45,11 @@ elseif("${ARCH}" STREQUAL "hexagon")
   set(triple hexagon-none-elf)
 elseif("${ARCH}" STREQUAL "tricore")
   set(triple tricore-unknown-elf)
+elseif("${ARCH}" STREQUAL "posix" AND CMAKE_HOST_WIN32)
+  # Windows native_sim images are 32-bit x86 MinGW code, also on Arm64 and x64 hosts,
+  # whose Clang targets the host architecture by default. With this spelling of the
+  # triple, Clang finds the binutils programs named i686-w64-mingw32-*.
+  set(triple i686-w64-mingw32)
 endif()
 
 if(DEFINED triple)

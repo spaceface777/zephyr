@@ -69,6 +69,7 @@ It requires a native Windows build host and the ``native_sim/native`` target.
 The experimental mode does not support Windows-64 binaries, ARM64 binaries, or MSVC.
 It does not support cross-compilation from Linux or macOS.
 Windows on Arm runs the i686 executable through x86 emulation.
+With LLVM-MinGW, the compiler and the linker themselves run natively there.
 
 This mode uses one embedded CPU and the host C library (:kconfig:option:`CONFIG_EXTERNAL_LIBC`).
 NCE and NCT use pthreads by default.
@@ -88,17 +89,25 @@ Build dependencies:
 
 * The normal :ref:`getting_started` prerequisites for native Windows, including
   Python, CMake, Ninja, west, and the Zephyr Python dependencies.
-* An i686 MinGW toolchain.
+* An i686 MinGW toolchain that links with GNU ld, for its linker scripts and relocatable links:
 
-  * Tested: the standard `WinLibs <https://winlibs.com/>`_ Win32/i686 toolchain with POSIX threads,
-    DWARF exceptions, and UCRT: GCC 16.2.0, MinGW-w64 14.0.0, release 2.
+  * GCC, with the ``host`` toolchain variant.
+    Tested: the standard `WinLibs <https://winlibs.com/>`_ Win32/i686 toolchain with POSIX
+    threads, DWARF exceptions, and UCRT: GCC 16.2.0, MinGW-w64 14.0.0, release 2.
+  * Clang, with the ``host/llvm`` toolchain variant, which targets ``i686-w64-mingw32``.
+    Clang needs GNU ld for that target as ``i686-w64-mingw32-ld.bfd``, next to Clang or in
+    ``PATH``. LLD does not support the linker scripts and relocatable links of this mode.
+    LLVM-MinGW has no libgcc, so select :kconfig:option:`CONFIG_COMPILER_RT_RTLIB`.
+    Tested: `LLVM-MinGW <https://github.com/mstorsjo/llvm-mingw>`_ 20261104 (UCRT) for x64 and
+    Arm64 hosts, with GNU ld from GNU Binutils 2.47 built for the same host.
 
 The runner uses CMake, Ninja, and Python. It does not require MSYS2, Cygwin,
 Git Bash, or GNU make. The Zephyr SDK ELF compiler cannot replace the Windows toolchain.
 
 Use paths without whitespace for the workspace, toolchain, and build directory.
-Put the native tools and the WinLibs ``bin`` directory in ``PATH``.
-When you run the executable, keep the WinLibs ``bin`` directory in ``PATH`` for its runtime DLLs.
+Put the native tools and the toolchain's ``bin`` directory in ``PATH``.
+When you run the executable, keep the directory of the toolchain's i686 runtime DLLs in
+``PATH``: the WinLibs ``bin`` directory, or LLVM-MinGW's ``i686-w64-mingw32/bin``.
 
 From a Windows command prompt in the Zephyr workspace, build Hello World:
 
@@ -108,6 +117,15 @@ From a Windows command prompt in the Zephyr workspace, build Hello World:
      -GNinja -DZEPHYR_TOOLCHAIN_VARIANT=host ^
      -DNATIVE_SIM_EXPERIMENTAL_WINDOWS=ON ^
      -DCONFIG_NATIVE_SIM_SLOWDOWN_TO_REAL_TIME=n
+
+With LLVM-MinGW, select the ``host/llvm`` toolchain variant and compiler-rt:
+
+.. code-block:: bat
+
+   west build -b native_sim/native zephyr/samples/hello_world -d C:/build/native_sim -- ^
+     -GNinja -DZEPHYR_TOOLCHAIN_VARIANT=host/llvm ^
+     -DNATIVE_SIM_EXPERIMENTAL_WINDOWS=ON ^
+     -DCONFIG_NATIVE_SIM_SLOWDOWN_TO_REAL_TIME=n -DCONFIG_COMPILER_RT_RTLIB=y
 
 For a custom runner integration, configure with ``-DCONFIG_BUILD_OUTPUT_EXE=n``.
 Then build only the runner library:
@@ -131,7 +149,20 @@ Run the executable with a simulation time limit:
 The COFF build retains the original weak-symbol metadata for localization.
 Garbage collection runs at the final link, after the weak-symbol repair.
 The repair preserves weak overrides and keeps embedded definitions private.
+Localization edits the COFF symbol table itself, so the build needs no objcopy.
+A COMDAT section of the embedded image whose key symbol becomes private stops being a COMDAT,
+so it neither replaces nor merges with the runner's copies.
 The build uses unmodified binutils.
+
+For Clang, the build also handles these differences from GCC:
+
+* Clang's MinGW driver adds start files and libraries to a relocatable link,
+  so that link uses ``-nostdlib``.
+* Clang writes an address-significance table for LLD into every object. The relocatable link
+  drops its removal flag, so images are compiled with ``-fno-addrsig``.
+* LLVM's libunwind finds unwind tables by the 8-character section name ``.eh_fram``.
+  GNU ld writes the long name ``.eh_frame`` once an image has debug sections, so the runner's
+  linker script collects the unwind tables under the short name.
 
 The Windows stack adapter measures OS guard pages before it requests a committed thread stack.
 It checks each child stack independently before it publishes bounds or permits sentinel writes.

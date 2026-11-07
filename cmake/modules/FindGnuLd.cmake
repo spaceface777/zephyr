@@ -41,11 +41,20 @@ if(EXISTS "${GNULD_LINKER}")
 endif()
 
 # See if the compiler has a preferred linker
+# A cross compiler such as Clang looks for the linker of the target it is given.
+set(gnuld_target_flags)
+if(CMAKE_C_COMPILER_TARGET)
+  set(gnuld_target_flags --target=${CMAKE_C_COMPILER_TARGET})
+endif()
 execute_process(
-  COMMAND ${CMAKE_C_COMPILER} --print-prog-name=ld.bfd
+  COMMAND ${CMAKE_C_COMPILER} ${gnuld_target_flags} --print-prog-name=ld.bfd
   OUTPUT_VARIABLE GNULD_LINKER
   OUTPUT_STRIP_TRAILING_WHITESPACE
 )
+# Clang on Windows prints the program it found without its .exe suffix.
+if(CMAKE_HOST_WIN32 AND NOT EXISTS "${GNULD_LINKER}" AND EXISTS "${GNULD_LINKER}.exe")
+  string(APPEND GNULD_LINKER ".exe")
+endif()
 
 if(EXISTS "${GNULD_LINKER}")
   cmake_path(NORMAL_PATH GNULD_LINKER)

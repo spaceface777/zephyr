@@ -30,8 +30,8 @@ function(nsi_runner_export name value)
   set(nsi_runner_content "${nsi_runner_content}" PARENT_SCOPE)
 endfunction()
 
-foreach(tool C_COMPILER C_COMPILER_LAUNCHER CXX_COMPILER CXX_COMPILER_LAUNCHER AR RANLIB
-    MAKE_PROGRAM)
+foreach(tool C_COMPILER C_COMPILER_LAUNCHER C_COMPILER_TARGET CXX_COMPILER CXX_COMPILER_LAUNCHER
+    AR RANLIB MAKE_PROGRAM)
   nsi_runner_export(CMAKE_${tool} "${CMAKE_${tool}}")
 endforeach()
 nsi_runner_export(NSI_DIR "${NSI_DIR}")

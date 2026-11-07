@@ -17,9 +17,22 @@ foreach(language C CXX ASM)
     set(CMAKE_${language}_FLAGS_${configuration} "" CACHE STRING "Runner ${language} flags" FORCE)
   endforeach()
 endforeach()
+# Clang targets the host architecture unless told otherwise.
+foreach(language C CXX ASM)
+  set(CMAKE_${language}_COMPILER_TARGET "${CMAKE_C_COMPILER_TARGET}")
+endforeach()
 project(native_sim_windows_runner LANGUAGES C)
-if(NOT CMAKE_HOST_WIN32 OR NOT CMAKE_C_COMPILER_ID STREQUAL "GNU")
-  message(FATAL_ERROR "The Windows runner requires native Windows and MinGW GCC.")
+if(NOT CMAKE_HOST_WIN32 OR NOT CMAKE_C_COMPILER_ID MATCHES "^(GNU|Clang)$")
+  message(FATAL_ERROR "The Windows runner requires native Windows and MinGW GCC or Clang.")
+endif()
+# Both compilers link with GNU ld, for its linker scripts. Clang links with LLD by default.
+set(target_flags)
+set(link_flags)
+if(CMAKE_C_COMPILER_TARGET)
+  set(target_flags "--target=${CMAKE_C_COMPILER_TARGET}")
+endif()
+if(CMAKE_C_COMPILER_ID STREQUAL "Clang")
+  set(link_flags -fuse-ld=bfd)
 endif()
 
 file(GLOB runner_sources CONFIGURE_DEPENDS
@@ -142,7 +155,7 @@ add_custom_command(OUTPUT "${localized}" "${localized_script}"
   VERBATIM
 )
 add_custom_command(OUTPUT "${base_script}"
-  COMMAND "${CMAKE_C_COMPILER}" -x c -E -P
+  COMMAND "${CMAKE_C_COMPILER}" ${target_flags} -x c -E -P
     "${NSI_DIR}/common/other/linker_script.pre.ld" -o "${base_script}"
     -MMD -MP -MF "${base_script}.d" -MT "${base_script}"
   DEPENDS "${NSI_DIR}/common/other/linker_script.pre.ld"
@@ -176,11 +189,11 @@ foreach(option IN LISTS NSI_INTERFACE_LINK_OPTIONS)
   list(APPEND link_options ${option})
 endforeach()
 add_custom_command(OUTPUT "${NSI_EXE}"
-  COMMAND "${CMAKE_C_COMPILER}"
+  COMMAND "${CMAKE_C_COMPILER}" ${target_flags} ${link_flags}
     -Wl,--whole-archive "${localized}" "$<TARGET_FILE:runner>" ${NSI_LIBRARIES}
     -Wl,--no-whole-archive ${runner_libraries} -o "${NSI_EXE}"
     -fno-pie -fno-pic -Wall -Wpedantic -Wl,--gc-sections -pthread
-    ${link_options} -lm -T "${final_script}"
+    ${link_options} -lm "-Wl,-T,${final_script}"
   DEPENDS runner "${localized}" ${NSI_LIBRARIES} ${runner_libraries} "${final_script}"
   COMMAND_EXPAND_LISTS
   VERBATIM
